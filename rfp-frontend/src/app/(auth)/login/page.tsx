@@ -11,8 +11,17 @@ export default function LoginPage() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
-    // For now, redirect straight to the CEO dashboard
-    router.push('/dashboard/ceo')
+
+    const emailInput = (document.getElementById('email') as HTMLInputElement)?.value
+    
+    const isArchitect = emailInput === 'alex@company.com'
+    const user = isArchitect 
+      ? { id: 'u2', name: 'Alex Johnson', initials: 'SA', role: 'architect', email: 'alex@company.com' }
+      : { id: 'u1', name: 'Jennifer Smith', initials: 'PM', role: 'pm', email: 'jennifer@company.com' }
+      
+    localStorage.setItem('rfp_user', JSON.stringify(user))
+    
+    router.push(isArchitect ? '/dashboard/architect' : '/dashboard/ceo')
   }
 
   return (
