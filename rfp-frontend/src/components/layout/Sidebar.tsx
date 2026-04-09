@@ -1,0 +1,96 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { usePathname, useRouter } from 'next/navigation'
+import { 
+  LayoutDashboard, 
+  CheckSquare, 
+  Settings, 
+  Briefcase, 
+  FileEdit,
+  FolderOpen
+} from 'lucide-react'
+import { User } from '@/lib/mocks/rfpData'
+
+export function Sidebar() {
+  const pathname = usePathname()
+  const router = useRouter()
+  const [user, setUser] = useState<User | null>(null)
+
+  useEffect(() => {
+    const stored = localStorage.getItem('rfp_user')
+    if (stored) {
+      setUser(JSON.parse(stored))
+    } else {
+      router.push('/login')
+    }
+  }, [router])
+
+  if (!user) return <div className="w-64 border-r border-zinc-200 bg-zinc-50 h-screen" />
+
+  const isPM = user.role === 'pm'
+
+  const pmLinks = [
+    { name: 'Dashboard', href: '/dashboard/ceo', icon: LayoutDashboard },
+    { name: 'Approvals / Rejections', href: '/dashboard/ceo/approvals', icon: CheckSquare },
+    { name: 'Settings', href: '/dashboard/ceo/settings', icon: Settings },
+  ]
+
+  const architectLinks = [
+    { name: 'Assigned RFPs', href: '/dashboard/architect', icon: Briefcase },
+    { name: 'Workspace', href: '/dashboard/architect/workspace', icon: FolderOpen },
+    { name: 'Settings', href: '/dashboard/architect/settings', icon: Settings },
+  ]
+
+  const links = isPM ? pmLinks : architectLinks
+
+  return (
+    <div className="w-64 border-r border-zinc-200 bg-white h-screen flex flex-col items-center py-6 px-4">
+      <div className="w-full mb-10 flex items-center gap-2 px-2">
+        <div className="w-8 h-8 flex-shrink-0 bg-black rounded flex items-center justify-center">
+          <span className="text-white font-bold text-sm">R</span>
+        </div>
+        <div className="flex flex-col overflow-hidden">
+          <span className="text-sm font-semibold truncate leading-tight">
+            {isPM ? 'PM / Leadership' : 'Solution Architect'}
+          </span>
+          <span className="text-xs text-zinc-500 truncate">{user.name}</span>
+        </div>
+      </div>
+
+      <nav className="w-full flex-1 space-y-2">
+        {links.map((link) => {
+          const isActive = pathname === link.href || pathname.startsWith(link.href + '/')
+          const Icon = link.icon
+          return (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors ${
+                isActive
+                  ? 'bg-zinc-100 text-zinc-900 font-medium'
+                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {link.name}
+            </Link>
+          )
+        })}
+      </nav>
+      
+      <div className="w-full mt-auto px-2">
+      <button
+        onClick={() => {
+          localStorage.removeItem('rfp_user')
+          router.push('/login')
+        }}
+        className="w-full flex items-center justify-center py-2 text-xs text-zinc-500 border border-zinc-200 rounded-md hover:bg-zinc-50"
+      >
+        Sign Out
+      </button>
+      </div>
+    </div>
+  )
+}
