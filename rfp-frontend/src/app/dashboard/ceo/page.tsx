@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Eye, Upload, TrendingUp, AlertCircle, Clock, CheckCircle2 } from 'lucide-react'
+import { Eye, Upload, TrendingUp, AlertCircle, Clock, CheckCircle2, ArrowUpRight } from 'lucide-react'
 import { MOCK_RFPS, DASHBOARD_STATS, RFPStatus, RFPRisk } from '@/lib/mocks/rfpData'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -169,13 +169,13 @@ export default function CEODashboard() {
                 </TableCell>
                 <TableCell className="text-right py-4">
                   <Button 
-                    variant="ghost" 
+                    variant="outline" 
                     size="sm" 
-                    className="text-blue-600 hover:text-blue-800 hover:bg-blue-50"
-                    onClick={() => router.push(`/rfp/${rfp.id}/overview`)}
+                    className="rounded-lg font-bold hover:bg-zinc-900 hover:text-white transition-all border-zinc-200"
+                    onClick={() => router.push(`/dashboard/ceo/rfp/${rfp.id}`)}
                   >
-                    <Eye className="w-4 h-4 mr-2" />
-                    Review
+                    Analyze
+                    <ArrowUpRight className="w-4 h-4 ml-1.5" />
                   </Button>
                 </TableCell>
               </TableRow>

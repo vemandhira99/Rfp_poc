@@ -97,9 +97,9 @@ export default function RfpReviewPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         {/* Main Column */}
-        <div className="xl:col-span-2 space-y-8">
+        <div className="lg:col-span-2 space-y-8">
           {/* Quick Info Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Card className="border-zinc-200 shadow-sm overflow-hidden group hover:shadow-md transition-shadow">
@@ -291,7 +291,7 @@ export default function RfpReviewPage() {
         </div>
 
         {/* Sidebar / AI Assistant - ChatGPT Redesign */}
-        <div className="xl:col-span-1">
+        <div className="lg:col-span-1">
           <Card className="border-none shadow-2xl overflow-hidden sticky top-24 bg-[#f9f9f9] border border-zinc-200/50 rounded-3xl">
             <CardHeader className="p-6 pb-4 bg-white border-b border-zinc-100">
               <div className="flex items-center justify-between">

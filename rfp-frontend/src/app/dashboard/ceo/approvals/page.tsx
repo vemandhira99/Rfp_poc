@@ -141,9 +141,8 @@ export default function ApprovalsPage() {
                 <th className="px-6 py-4">RFP Details</th>
                 <th className="px-6 py-4">Client</th>
                 <th className="px-6 py-4">Value</th>
-                <th className="px-6 py-4">Status</th>
-                <th className="px-6 py-4">Deadline</th>
-                <th className="px-6 py-4 text-right">Action</th>
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-zinc-400">Status</th>
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-zinc-400">Deadline</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -175,17 +174,6 @@ export default function ApprovalsPage() {
                       <Calendar className="w-3.5 h-3.5" />
                       {rfp.deadline}
                     </div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <Button 
-                      onClick={() => router.push(`/dashboard/ceo/rfp/${rfp.id}`)}
-                      variant="outline" 
-                      size="sm" 
-                      className="rounded-lg font-bold hover:bg-zinc-900 hover:text-white transition-all border-zinc-200"
-                    >
-                      Review
-                      <ChevronRight className="w-4 h-4 ml-1" />
-                    </Button>
                   </td>
                 </tr>
               )) : (
