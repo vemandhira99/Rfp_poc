@@ -9,11 +9,12 @@ import {
   Settings, 
   Briefcase, 
   FileEdit,
-  FolderOpen
+  FolderOpen,
+  PanelLeftClose
 } from 'lucide-react'
 import { User } from '@/lib/mocks/rfpData'
 
-export function Sidebar() {
+export function Sidebar({ onToggle }: { onToggle?: () => void }) {
   const pathname = usePathname()
   const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
@@ -46,17 +47,26 @@ export function Sidebar() {
   const links = isPM ? pmLinks : architectLinks
 
   return (
-    <div className="w-64 border-r border-zinc-200 bg-white h-screen flex flex-col items-center py-6 px-4">
-      <div className="w-full mb-10 flex items-center gap-2 px-2">
-        <div className="w-8 h-8 flex-shrink-0 bg-black rounded flex items-center justify-center">
-          <span className="text-white font-bold text-sm">R</span>
+    <div className="h-full flex flex-col items-center py-6 px-4 relative overflow-hidden bg-white">
+      <div className="w-full mb-10 flex items-center justify-between gap-2 px-2">
+        <div className="flex items-center gap-2 overflow-hidden">
+          <div className="w-8 h-8 flex-shrink-0 bg-black rounded flex items-center justify-center">
+            <span className="text-white font-bold text-sm">R</span>
+          </div>
+          <div className="flex flex-col overflow-hidden">
+            <span className="text-sm font-semibold truncate leading-tight">
+              {isPM ? 'PM / Leadership' : 'Solution Architect'}
+            </span>
+            <span className="text-xs text-zinc-500 truncate">{user.name}</span>
+          </div>
         </div>
-        <div className="flex flex-col overflow-hidden">
-          <span className="text-sm font-semibold truncate leading-tight">
-            {isPM ? 'PM / Leadership' : 'Solution Architect'}
-          </span>
-          <span className="text-xs text-zinc-500 truncate">{user.name}</span>
-        </div>
+        <button 
+          onClick={onToggle}
+          className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-900 transition-colors"
+          title="Hide Sidebar"
+        >
+          <PanelLeftClose className="w-4 h-4" />
+        </button>
       </div>
 
       <nav className="w-full flex-1 space-y-2">

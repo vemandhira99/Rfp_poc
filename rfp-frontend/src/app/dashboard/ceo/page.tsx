@@ -2,11 +2,12 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Eye, Upload, TrendingUp, AlertCircle, Clock, CheckCircle2 } from 'lucide-react'
+import { Eye, Upload, TrendingUp, AlertCircle, Clock, CheckCircle2, ArrowUpRight } from 'lucide-react'
 import { MOCK_RFPS, DASHBOARD_STATS, RFPStatus, RFPRisk } from '@/lib/mocks/rfpData'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import { UploadRfpModal } from '@/components/rfp/UploadRfpModal'
 import { 
   Table, 
   TableBody, 
@@ -62,6 +63,7 @@ function RiskBadge({ risk }: { risk: RFPRisk }) {
 export default function CEODashboard() {
   const router = useRouter()
   const [searchTerm, setSearchTerm] = useState('')
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
 
   const filteredRFPs = MOCK_RFPS.filter(
     (rfp) => 
@@ -83,11 +85,19 @@ export default function CEODashboard() {
           <h1 className="text-3xl font-bold tracking-tight text-zinc-900">RFP Dashboard</h1>
           <p className="text-zinc-500 mt-1">Manage and review all active RFPs</p>
         </div>
-        <Button className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm">
+        <Button 
+          className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+          onClick={() => setIsUploadModalOpen(true)}
+        >
           <Upload className="w-4 h-4 mr-2" />
           Upload New RFP
         </Button>
       </div>
+
+      <UploadRfpModal 
+        isOpen={isUploadModalOpen} 
+        onClose={() => setIsUploadModalOpen(false)} 
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {statsArr.map((stat, i) => {
@@ -159,13 +169,13 @@ export default function CEODashboard() {
                 </TableCell>
                 <TableCell className="text-right py-4">
                   <Button 
-                    variant="ghost" 
+                    variant="outline" 
                     size="sm" 
-                    className="text-blue-600 hover:text-blue-800 hover:bg-blue-50"
-                    onClick={() => router.push(`/rfp/${rfp.id}/overview`)}
+                    className="rounded-lg font-bold hover:bg-zinc-900 hover:text-white transition-all border-zinc-200"
+                    onClick={() => router.push(`/dashboard/ceo/rfp/${rfp.id}`)}
                   >
-                    <Eye className="w-4 h-4 mr-2" />
-                    Review
+                    Analyze
+                    <ArrowUpRight className="w-4 h-4 ml-1.5" />
                   </Button>
                 </TableCell>
               </TableRow>
