@@ -51,22 +51,22 @@ function WorkspaceDetailContent() {
 
       {/* Main Content Column */}
       <div className="flex-1 min-w-0 pr-6">
-        <div className="flex justify-between items-center mb-10">
-          <div>
-            <h1 className="text-3xl font-black text-zinc-900 tracking-tight leading-none mb-2">Enterprise Cloud Migration Platform</h1>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-10">
+          <div className="max-w-md">
+            <h1 className="text-2xl font-black text-zinc-900 tracking-tight leading-tight mb-2">Enterprise Cloud Migration Platform</h1>
             <p className="text-sm font-medium text-zinc-500">Workspace / Draft V1</p>
           </div>
-          <div className="flex items-center gap-4">
-            <button className="flex items-center gap-2.5 px-5 py-2.5 border border-zinc-200 rounded-xl text-sm font-bold text-zinc-600 hover:bg-zinc-50 bg-white transition-all active:scale-95 shadow-sm">
-              <RefreshCw className="w-4 h-4" />
+          <div className="flex flex-wrap items-center gap-3">
+            <button className="flex items-center gap-2 px-4 py-2 border border-zinc-200 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-50 bg-white transition-all active:scale-95 shadow-sm">
+              <RefreshCw className="w-3.5 h-3.5" />
               Regenerate
             </button>
-            <button className="flex items-center gap-2.5 px-5 py-2.5 border border-zinc-200 rounded-xl text-sm font-bold text-zinc-600 hover:bg-zinc-50 bg-white transition-all active:scale-95 shadow-sm">
-              <Save className="w-4 h-4" />
+            <button className="flex items-center gap-2 px-4 py-2 border border-zinc-200 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-50 bg-white transition-all active:scale-95 shadow-sm">
+              <Save className="w-3.5 h-3.5" />
               Save
             </button>
-            <button className="flex items-center gap-2.5 px-6 py-3 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95">
-              <Send className="w-4 h-4" />
+            <button className="flex items-center gap-2.5 px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-black shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95">
+              <Send className="w-3.5 h-3.5" />
               Submit for Review
             </button>
           </div>
