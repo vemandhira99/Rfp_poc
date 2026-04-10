@@ -45,27 +45,29 @@ function AssignedRfpsContent() {
   const rfps = allRfps.filter(rfp => rfp.title.toLowerCase().includes(q) || rfp.client.toLowerCase().includes(q))
 
   return (
-    <div className="space-y-6 pb-10">
+    <div className="space-y-6 pb-10 pt-2 min-h-screen w-full relative">
+      <div className="absolute inset-0 gradient-bg -z-10 rounded-3xl opacity-50 blur-3xl pointer-events-none" />
+      
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Assigned RFPs</h1>
-        <p className="text-zinc-500 text-base mt-2">RFPs assigned to you for technical response</p>
+        <h1 className="text-4xl font-extrabold tracking-tight text-zinc-900 gradient-text">Assigned RFPs</h1>
+        <p className="text-zinc-500 text-base mt-2 font-medium">RFPs assigned to you for technical response</p>
       </div>
 
-      <div className="space-y-6 pt-2">
+      <div className="space-y-6 pt-2 relative z-10">
         {rfps.length === 0 ? (
-          <p className="text-zinc-500 text-sm">No RFPs match your search "{q}".</p>
+          <p className="text-zinc-500 text-sm font-medium">No RFPs match your search "{q}".</p>
         ) : (
           rfps.map((rfp, idx) => (
-            <Card key={idx} className="border border-zinc-200 shadow-sm rounded-2xl">
-              <CardContent className="p-6">
-                <div className="flex justify-between items-start mb-1">
-                  <h2 className="text-xl font-bold text-zinc-900">{rfp.title}</h2>
-                  <button className="bg-[#2563EB] text-white px-4 py-2.5 rounded-lg flex items-center font-medium text-sm hover:bg-blue-700 transition-colors shadow-sm">
+            <Card key={idx} className="glass-card hover-lift rounded-2xl overflow-hidden shadow-sm">
+              <CardContent className="p-7">
+                <div className="flex justify-between items-start mb-2">
+                  <h2 className="text-xl font-extrabold text-zinc-900 tracking-tight">{rfp.title}</h2>
+                  <button className="bg-[#2563EB] text-white px-5 py-2.5 rounded-xl flex items-center font-bold text-sm hover:bg-blue-700 transition-all shadow-md hover:shadow-blue-500/20">
                     <Folder className="w-4 h-4 mr-2" />
                     Open Workspace
                   </button>
                 </div>
-                <p className="text-zinc-500 text-sm mb-8">{rfp.client}</p>
+                <p className="text-zinc-500 text-sm mb-8 font-medium">{rfp.client}</p>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>

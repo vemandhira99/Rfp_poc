@@ -2,11 +2,38 @@
 
 import { Save, Send, RefreshCw, Download, Sparkles, Search } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
-import { Suspense } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 
 function WorkspaceDetailContent() {
   const searchParams = useSearchParams()
   const q = searchParams.get('q')?.toLowerCase() || ''
+
+  const [aiWidth, setAiWidth] = useState(400)
+  const [isResizing, setIsResizing] = useState(false)
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return;
+      const newWidth = window.innerWidth - e.clientX - 48;
+      if (newWidth > 300 && newWidth < 800) {
+        setAiWidth(newWidth);
+      }
+    };
+    
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
 
   const allHistoricalReferences = [
     { title: "Cloud Migration - Finance Co", tag: "Finance", match: "95% match" },
@@ -19,9 +46,11 @@ function WorkspaceDetailContent() {
   )
 
   return (
-    <div className="flex h-full gap-10 py-4 max-w-7xl mx-auto">
+    <div className={`flex h-full gap-0 py-4 max-w-[1600px] mx-auto relative ${isResizing ? 'select-none cursor-col-resize' : ''}`}>
+      <div className="absolute inset-0 gradient-bg -z-10 rounded-3xl opacity-40 blur-3xl pointer-events-none" />
+
       {/* Main Content Column */}
-      <div className="flex-1 min-w-0 pr-10 border-r border-zinc-200/60">
+      <div className="flex-1 min-w-0 pr-6">
         <div className="flex justify-between items-center mb-10">
           <div>
             <h1 className="text-3xl font-black text-zinc-900 tracking-tight leading-none mb-2">Enterprise Cloud Migration Platform</h1>
@@ -45,7 +74,7 @@ function WorkspaceDetailContent() {
 
         <div className="grid grid-cols-2 gap-6 mb-8">
           {/* Card 1 */}
-          <div className="border border-zinc-200/80 rounded-2xl p-6 bg-white shadow-sm hover:shadow-md transition-all group relative">
+          <div className="glass-card hover-lift rounded-2xl p-6 relative group">
             <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-4 block">Uploaded RFP</span>
             <div className="absolute top-6 right-6 text-zinc-300 hover:text-zinc-600 cursor-pointer transition-colors">
               <Download className="w-5 h-5" />
@@ -54,7 +83,7 @@ function WorkspaceDetailContent() {
             <p className="text-xs font-medium text-zinc-500 mt-1">42 pages • 2.3 MB</p>
           </div>
           {/* Card 2 */}
-          <div className="border border-indigo-100 rounded-2xl p-6 bg-indigo-50/30 shadow-sm hover:shadow-md transition-all group relative backdrop-blur-sm">
+          <div className="border border-indigo-100/50 rounded-2xl p-6 bg-indigo-50/30 backdrop-blur-xl shadow-sm hover-lift relative group">
              <span className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-600 mb-4">
                <Sparkles className="w-4 h-4 animate-pulse" /> AI Generated Response
              </span>
@@ -67,7 +96,7 @@ function WorkspaceDetailContent() {
         </div>
 
         <div className="space-y-6">
-          <div className="border border-zinc-200/80 rounded-2xl p-8 bg-white shadow-sm">
+          <div className="glass-card rounded-2xl p-8">
             <h3 className="text-lg font-black text-zinc-900 mb-5 flex items-center gap-2">
               <div className="w-1.5 h-5 bg-indigo-600 rounded-full" />
               Project Overview
@@ -77,7 +106,7 @@ function WorkspaceDetailContent() {
             </p>
           </div>
 
-          <div className="border border-zinc-200/80 rounded-2xl p-8 bg-white shadow-sm">
+          <div className="glass-card rounded-2xl p-8">
             <h3 className="text-lg font-black text-zinc-900 mb-5 flex items-center gap-2">
               <div className="w-1.5 h-5 bg-zinc-900 rounded-full" />
               Key Requirements
@@ -99,17 +128,26 @@ function WorkspaceDetailContent() {
         </div>
       </div>
 
+      {/* Resizer Handle */}
+      <div 
+        className="w-1 mx-4 bg-zinc-200/50 hover:bg-indigo-500/50 cursor-col-resize rounded-full transition-colors flex items-center justify-center relative group"
+        onMouseDown={() => setIsResizing(true)}
+      >
+        <div className="absolute inset-y-0 -inset-x-2 z-10" />
+        <div className={`w-0.5 h-10 rounded-full transition-colors ${isResizing ? 'bg-indigo-600' : 'bg-transparent group-hover:bg-zinc-400'}`} />
+      </div>
+
       {/* Side Column: AI Assistant */}
-      <div className="w-80 flex-shrink-0 pl-4 space-y-8">
+      <div className="flex-shrink-0 space-y-8" style={{ width: aiWidth }}>
         <div>
           <h2 className="flex items-center gap-2 text-base font-black text-zinc-900 mb-6 uppercase tracking-wider">
             <Sparkles className="w-5 h-5 text-indigo-600" /> AI Assistant
           </h2>
           
-          <div className="border border-zinc-200/80 rounded-2xl p-4 bg-white shadow-sm mb-4 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
+          <div className="glass-card rounded-2xl p-4 mb-4 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
             <textarea 
               placeholder="Ask AI to help with your response..."
-              className="w-full text-sm font-medium border-none bg-transparent resize-none outline-none placeholder:text-zinc-400 h-28"
+              className="w-full text-sm font-medium border-none bg-transparent resize-none outline-none placeholder:text-zinc-400 h-40"
             />
           </div>
           
@@ -124,7 +162,7 @@ function WorkspaceDetailContent() {
               "Generate architecture diagram",
               "Validate compliance coverage"
             ].map((suggestion, idx) => (
-              <button key={idx} className="w-full text-left px-4 py-3 border border-zinc-200/80 rounded-xl text-[11px] font-black text-zinc-600 hover:border-indigo-600 hover:text-indigo-600 bg-white transition-all shadow-sm active:scale-95">
+              <button key={idx} className="w-full text-left px-4 py-3 border border-zinc-200/80 rounded-xl text-[11px] font-black text-zinc-600 hover:border-indigo-600 hover:text-indigo-600 bg-white/60 backdrop-blur-md transition-all shadow-sm active:scale-95">
                 {suggestion}
               </button>
             ))}
@@ -142,7 +180,7 @@ function WorkspaceDetailContent() {
               <p className="text-zinc-500 text-[10px] font-bold italic ml-1">No references found for "{q}"</p>
             ) : (
               historicalReferences.map((ref, idx) => (
-                <div key={idx} className="border border-zinc-200/80 rounded-2xl p-5 bg-white shadow-sm hover:border-indigo-200 transition-all group">
+                <div key={idx} className="glass-card hover-lift rounded-2xl p-5 relative group">
                   <h4 className="text-sm font-bold text-zinc-900 mb-3 group-hover:text-indigo-600 transition-colors leading-snug">{ref.title}</h4>
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">{ref.tag}</span>
@@ -153,7 +191,6 @@ function WorkspaceDetailContent() {
             )}
           </div>
         </div>
-
       </div>
     </div>
   )
