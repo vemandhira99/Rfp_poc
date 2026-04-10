@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Bell, Search, LogOut, User as UserIcon, Settings as SettingsIcon } from 'lucide-react'
+import { Bell, Search, LogOut, User as UserIcon, Settings as SettingsIcon, PanelLeftOpen } from 'lucide-react'
 import { User } from '@/lib/mocks/rfpData'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
@@ -15,7 +15,12 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useRouter } from 'next/navigation'
 
-export function Header() {
+interface HeaderProps {
+  showSidebarToggle?: boolean
+  onSidebarToggle?: () => void
+}
+
+export function Header({ showSidebarToggle, onSidebarToggle }: HeaderProps) {
   const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
   const [hasNotifications, setHasNotifications] = useState(true)
@@ -37,10 +42,21 @@ export function Header() {
   const dashboardPath = user.role === 'pm' ? '/dashboard/ceo' : '/dashboard/architect'
 
   return (
-    <header className="h-16 border-b border-zinc-200 bg-white px-8 flex items-center justify-between sticky top-0 z-10 w-full">
-      <div className="flex items-center gap-2">
-        <span className="text-zinc-900 font-semibold text-sm mr-2 hidden md:block">Enterprise SaaS RFP Automation</span>
-        <span className="text-xs px-2 py-0.5 bg-zinc-100 rounded-full text-zinc-500 border border-zinc-200">v1.2</span>
+    <header className="h-16 border-b border-zinc-200 bg-white px-8 flex items-center justify-between sticky top-0 z-40 w-full transition-all duration-300">
+      <div className="flex items-center gap-4">
+        {showSidebarToggle && (
+          <button 
+            onClick={onSidebarToggle}
+            className="p-2 rounded-lg hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900 transition-all animate-in fade-in slide-in-from-left-2"
+            title="Show Sidebar"
+          >
+            <PanelLeftOpen className="w-5 h-5" />
+          </button>
+        )}
+        <div className="flex items-center gap-2">
+          <span className="text-zinc-900 font-semibold text-sm mr-2 hidden md:block">Enterprise SaaS RFP Automation</span>
+          <span className="text-xs px-2 py-0.5 bg-zinc-100 rounded-full text-zinc-500 border border-zinc-200">v1.2</span>
+        </div>
       </div>
 
       <div className="flex-1 max-w-xl mx-8">

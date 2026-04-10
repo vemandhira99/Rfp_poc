@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { 
   CheckCircle2, 
   XCircle, 
@@ -21,6 +22,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
 export default function ApprovalsPage() {
+  const router = useRouter()
   const [filter, setFilter] = useState<RFPStatus | 'all'>('all')
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -175,8 +177,13 @@ export default function ApprovalsPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <Button variant="ghost" size="sm" className="rounded-lg font-bold hover:bg-zinc-900 hover:text-white transition-all">
-                      View Details
+                    <Button 
+                      onClick={() => router.push(`/dashboard/ceo/rfp/${rfp.id}`)}
+                      variant="outline" 
+                      size="sm" 
+                      className="rounded-lg font-bold hover:bg-zinc-900 hover:text-white transition-all border-zinc-200"
+                    >
+                      Review
                       <ChevronRight className="w-4 h-4 ml-1" />
                     </Button>
                   </td>
