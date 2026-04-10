@@ -44,6 +44,18 @@ export function Header() {
           <Input 
             placeholder="Search RFPs, clients, or requirements..." 
             className="w-full pl-9 bg-zinc-50 border-zinc-200 focus-visible:ring-1 focus-visible:ring-zinc-400 h-9"
+            defaultValue={typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('q') || '' : ''}
+            onChange={(e) => {
+              const term = e.target.value
+              const url = new URL(window.location.href)
+              if (term) {
+                url.searchParams.set('q', term)
+              } else {
+                url.searchParams.delete('q')
+              }
+              // Push to router safely while preserving current state
+              router.replace(url.pathname + url.search)
+            }}
           />
         </div>
       </div>
