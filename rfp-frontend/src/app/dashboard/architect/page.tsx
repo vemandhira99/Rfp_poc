@@ -1,7 +1,7 @@
 'use client'
 
 import { Card, CardContent } from '@/components/ui/card'
-import { Calendar, User, Folder, Award, Timer, ShieldCheck, Zap } from 'lucide-react'
+import { Calendar, User, Folder, Award, Timer, ShieldCheck, Zap, Search } from 'lucide-react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense } from 'react'
 import { cn } from '@/lib/utils'
