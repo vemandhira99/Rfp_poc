@@ -76,10 +76,10 @@ export const MOCK_USERS: User[] = [
   },
   {
     id: 'u2',
-    name: 'Alok Jha',
-    initials: 'AJ',
+    name: 'Veman Chippa',
+    initials: 'VC',
     role: 'architect',
-    email: 'alok@company.com',
+    email: 'veman@company.com',
   },
 ]
 
@@ -99,7 +99,7 @@ export const MOCK_RFPS: RFP[] = [
     complexity: 'high',
     contractLength: '18 months',
     paymentTerms: 'Net 30',
-    assignedTo: 'Alok Jha',
+    assignedTo: 'Veman Chippa',
     assignedBy: 'Yash Kanvinde',
     daysRemaining: 17,
     description:
@@ -207,7 +207,7 @@ export const MOCK_RFPS: RFP[] = [
     complexity: 'critical',
     contractLength: '12 months',
     paymentTerms: 'Net 45',
-    assignedTo: 'Alok Jha',
+    assignedTo: 'Veman Chippa',
     assignedBy: 'Yash Kanvinde',
     daysRemaining: 6,
     description:
@@ -279,7 +279,7 @@ export const MOCK_RFPS: RFP[] = [
     complexity: 'critical',
     contractLength: '24 months',
     paymentTerms: 'Net 30',
-    assignedTo: 'Alok Jha',
+    assignedTo: 'Veman Chippa',
     assignedBy: 'Yash Kanvinde',
     daysRemaining: 11,
     description:
@@ -357,7 +357,7 @@ export const MOCK_RFPS: RFP[] = [
     complexity: 'medium',
     contractLength: '36 months',
     paymentTerms: 'Net 60',
-    assignedTo: 'Alok Jha',
+    assignedTo: 'Veman Chippa',
     assignedBy: 'Yash Kanvinde',
     daysRemaining: 0,
     description: 'Implementation of smart traffic management and public Wi-Fi infrastructure.',
@@ -380,7 +380,7 @@ export const MOCK_RFPS: RFP[] = [
     complexity: 'medium',
     contractLength: '12 months',
     paymentTerms: 'Net 30',
-    assignedTo: 'Alok Jha',
+    assignedTo: 'Veman Chippa',
     assignedBy: 'Yash Kanvinde',
     daysRemaining: -5,
     description: 'AI-driven supply chain forecasting and inventory management.',
@@ -403,7 +403,7 @@ export const MOCK_RFPS: RFP[] = [
     complexity: 'low',
     contractLength: '6 months',
     paymentTerms: 'Upfront',
-    assignedTo: 'Alok Jha',
+    assignedTo: 'Veman Chippa',
     assignedBy: 'Yash Kanvinde',
     daysRemaining: 35,
     description: 'Establishing a private blockchain testbed for cross-border payments.',

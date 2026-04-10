@@ -26,7 +26,7 @@ export default function LoginPage() {
     
     // In this simplified version, we use the selected role to determine the user object
     const user = role === 'architect'
-      ? { id: 'u2', name: 'Alok Jha', initials: 'AJ', role: 'architect', email: emailInput || 'alok@company.com' }
+      ? { id: 'u2', name: 'Veman Chippa', initials: 'VC', role: 'architect', email: emailInput || 'veman@company.com' }
       : { id: 'u1', name: 'Yash Kanvinde', initials: 'YK', role: 'pm', email: emailInput || 'yash@company.com' }
       
     localStorage.setItem('rfp_user', JSON.stringify(user))
@@ -137,7 +137,7 @@ export default function LoginPage() {
               <Input 
                 id="email" 
                 type="email" 
-                placeholder={role === 'pm' ? 'yash@company.com' : 'alok@company.com'} 
+                placeholder={role === 'pm' ? 'yash@company.com' : 'veman@company.com'} 
                 required 
                 className="h-12 border-zinc-200 focus-visible:ring-zinc-900 focus-visible:border-zinc-900 rounded-xl px-4 py-6 text-base font-medium transition-all" 
               />
