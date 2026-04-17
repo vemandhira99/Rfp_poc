@@ -14,6 +14,7 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { useRouter } from 'next/navigation'
+import { cn } from '@/lib/utils'
 
 interface HeaderProps {
   showSidebarToggle?: boolean
@@ -23,14 +24,38 @@ interface HeaderProps {
 export function Header({ showSidebarToggle, onSidebarToggle }: HeaderProps) {
   const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
-  const [hasNotifications, setHasNotifications] = useState(true)
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [hasNotifications, setHasNotifications] = useState(false)
 
   useEffect(() => {
     const stored = localStorage.getItem('rfp_user')
     if (stored) {
       setUser(JSON.parse(stored))
     }
+
+    async function fetchNotifications() {
+      try {
+        const { fetchApi } = await import('@/lib/api')
+        const data = await fetchApi('/rfps/notifications')
+        setNotifications(data || [])
+        setHasNotifications(data.some((n: any) => !n.is_read))
+      } catch (e) {
+        console.error("Failed to fetch notifications", e)
+      }
+    }
+    
+    fetchNotifications()
+    const interval = setInterval(fetchNotifications, 30000) // Poll every 30s
+    return () => clearInterval(interval)
   }, [])
+
+  const markRead = async (id: number) => {
+    try {
+      const { fetchApi } = await import('@/lib/api')
+      await fetchApi(`/rfps/notifications/${id}/read`, { method: 'POST' })
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n))
+    } catch (e) {}
+  }
 
   if (!user) return <header className="h-16 border-b border-zinc-200 bg-white" />
 
@@ -91,16 +116,42 @@ export function Header({ showSidebarToggle, onSidebarToggle }: HeaderProps) {
               )}
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-64 bg-white border border-zinc-200 shadow-lg rounded-xl p-0">
-            <div className="p-4 border-b border-zinc-100">
+          <DropdownMenuContent align="end" className="w-80 bg-white border border-zinc-200 shadow-lg rounded-xl p-0 overflow-hidden">
+            <div className="p-4 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
               <p className="text-sm font-bold text-zinc-900">Notifications</p>
+              {notifications.length > 0 && (
+                <span className="text-[10px] font-black uppercase text-zinc-400">{notifications.length} total</span>
+              )}
             </div>
-            <div className="p-8 flex flex-col items-center justify-center text-center space-y-2">
-              <div className="w-12 h-12 rounded-full bg-zinc-50 flex items-center justify-center">
-                <Bell className="w-6 h-6 text-zinc-300" />
-              </div>
-              <p className="text-sm font-medium text-zinc-900">All caught up!</p>
-              <p className="text-xs text-zinc-500">No more notifications for now.</p>
+            <div className="max-h-96 overflow-y-auto">
+              {notifications.length > 0 ? (
+                notifications.map((n) => (
+                  <div 
+                    key={n.id} 
+                    onClick={() => markRead(n.id)}
+                    className={cn(
+                      "p-4 border-b border-zinc-50 cursor-pointer hover:bg-zinc-50 transition-colors relative",
+                      !n.is_read && "bg-blue-50/30"
+                    )}
+                  >
+                    {!n.is_read && <div className="absolute left-1.5 top-1/2 -translate-y-1/2 w-1 h-8 bg-blue-500 rounded-full" />}
+                    <p className={cn("text-xs leading-relaxed", !n.is_read ? "text-zinc-900 font-bold" : "text-zinc-500 font-medium")}>
+                      {n.message}
+                    </p>
+                    <p className="text-[9px] text-zinc-400 mt-2 font-black uppercase tracking-widest">
+                      {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <div className="p-8 flex flex-col items-center justify-center text-center space-y-2">
+                  <div className="w-12 h-12 rounded-full bg-zinc-50 flex items-center justify-center">
+                    <Bell className="w-6 h-6 text-zinc-300" />
+                  </div>
+                  <p className="text-sm font-medium text-zinc-900">All caught up!</p>
+                  <p className="text-xs text-zinc-500">No more notifications for now.</p>
+                </div>
+              )}
             </div>
           </DropdownMenuContent>
         </DropdownMenu>

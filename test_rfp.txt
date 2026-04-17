@@ -1,0 +1,24 @@
+Global Tech Corp seeks a comprehensive platform to transition their on-premise infrastructure to AWS. The solution must support 200+ applications, ensure zero downtime during migration, and provide automated testing and rollback capabilities.
+
+Timeline:
+Due: 2026-04-25
+
+Financial Overview:
+Estimated Value
+$2.5M
+Contract Length
+18 months
+Payment Terms
+Net 30
+
+Effort Estimation:
+Technical Response: 1 week
+Executive Review: 3 days
+Total Effort: 10 days
+
+Scope Summary
+Transition on-premise infrastructure to AWS.
+
+Identified Risks
+Tight 17-day deadline for comprehensive response
+Complex compliance requirements (SOC2, HIPAA)

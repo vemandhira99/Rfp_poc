@@ -19,19 +19,46 @@ export default function LoginPage() {
   const router = useRouter()
   const [role, setRole] = useState<'pm' | 'architect'>('pm')
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
 
     const emailInput = (document.getElementById('email') as HTMLInputElement)?.value
+    const passwordInput = (document.getElementById('password') as HTMLInputElement)?.value
     
-    // In this simplified version, we use the selected role to determine the user object
-    const user = role === 'architect'
-      ? { id: 'u2', name: 'Veman Chippa', initials: 'VC', role: 'architect', email: emailInput || 'veman@company.com' }
-      : { id: 'u1', name: 'Yash Kanvinde', initials: 'YK', role: 'pm', email: emailInput || 'yash@company.com' }
+    const emailToUse = emailInput || (role === 'architect' ? 'veman@company.com' : 'yash@company.com')
+    const password = passwordInput || 'pm123'; // Default to pm123 for convenience if empty
+
+    try {
+      const response = await fetch(process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000' + '/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email: emailToUse,
+          password: password
+        })
+      });
       
-    localStorage.setItem('rfp_user', JSON.stringify(user))
-    
-    router.push(role === 'architect' ? '/dashboard/architect' : '/dashboard/ceo')
+      if (!response.ok) {
+        throw new Error('Login failed');
+      }
+      
+      const data = await response.json();
+      
+      // Save token and user data
+      localStorage.setItem('rfp_token', data.access_token);
+      localStorage.setItem('rfp_user', JSON.stringify({
+        id: data.user_id,
+        name: data.name,
+        role: role,
+        email: emailToUse
+      }));
+      
+      router.push(role === 'architect' ? '/dashboard/architect' : '/dashboard/ceo')
+    } catch(err) {
+      alert('Login failed. Ensure backend is running.');
+    }
   }
 
   return (
@@ -138,6 +165,17 @@ export default function LoginPage() {
                 id="email" 
                 type="email" 
                 placeholder={role === 'pm' ? 'yash@company.com' : 'veman@company.com'} 
+                required 
+                className="h-12 border-zinc-200 focus-visible:ring-zinc-900 focus-visible:border-zinc-900 rounded-xl px-4 py-6 text-base font-medium transition-all" 
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password" className="text-xs font-bold uppercase tracking-wider text-zinc-400">Password</Label>
+              <Input 
+                id="password" 
+                type="password" 
+                placeholder="••••••••" 
                 required 
                 className="h-12 border-zinc-200 focus-visible:ring-zinc-900 focus-visible:border-zinc-900 rounded-xl px-4 py-6 text-base font-medium transition-all" 
               />

@@ -1,4 +1,4 @@
-export type RFPStatus = 'new' | 'in-progress' | 'pending-review' | 'pending-approval' | 'approved' | 'rejected' | 'on-hold'
+export type RFPStatus = 'new' | 'in-progress' | 'pending-review' | 'pending-approval' | 'approved' | 'rejected' | 'on-hold' | 'queued_for_processing' | 'processing_summary' | 'assigned_to_sa' | 'in_drafting' | 'under_review'
 export type RFPRisk = 'low' | 'medium' | 'high' | 'critical'
 export type UserRole = 'pm' | 'architect'
 

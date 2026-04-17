@@ -22,46 +22,135 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
 export default function RfpReviewPage() {
   const params = useParams()
   const router = useRouter()
-  const [rfp, setRfp] = useState<RFP | null>(null)
+  const [rfp, setRfp] = useState<any>(null)
+  const [sections, setSections] = useState<{section_name: string, section_text: string}[]>([])
+  const [aiSummary, setAiSummary] = useState<any>(null)
+  
+  // Architect Assignment State
+  const [architects, setArchitects] = useState<any[]>([])
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false)
+  const [selectedArchitect, setSelectedArchitect] = useState('')
+  const [isAssigning, setIsAssigning] = useState(false)
+
   const [chatInput, setChatInput] = useState('')
+  const [knowledgeMode, setKnowledgeMode] = useState('Hybrid') // 'RFP-Only' | 'Global' | 'Hybrid'
+  const [isChatLoading, setIsChatLoading] = useState(false)
   const [messages, setMessages] = useState<{ role: 'ai' | 'user', text: string }[]>([
-    { role: 'ai', text: 'Hello! I am your RFP AI Assistant. I have analyzed this document and can help you with specific questions about technical requirements, compliance, or strategic fit. How can I assist you today?' }
+    { role: 'ai', text: 'Hello! I am your AI Advisor. Choose your preferred knowledge mode above and ask me anything about this RFP.' }
   ])
 
   useEffect(() => {
-    const found = MOCK_RFPS.find(r => r.id === params.id)
-    if (found) {
-      setRfp(found)
+    async function loadData() {
+      try {
+        const { fetchApi } = await import('@/lib/api')
+        // Using real DB ID from the URL path
+        const rfpData = await fetchApi(`/rfps/${params.id}`)
+        
+        let fetchedSections = []
+        try {
+           fetchedSections = await fetchApi(`/uploads/rfp/${params.id}/sections`)
+           setSections(fetchedSections || [])
+        } catch(e) {
+           console.log("Failed to load sections", e)
+        }
+        let sumData = null
+        try {
+           sumData = await fetchApi(`/rfps/${params.id}/summary`)
+           if (!sumData.error) {
+              setAiSummary(sumData)
+           }
+        } catch(e) {
+           console.log("No AI summary yet")
+        }
+        
+        // Map backend model to the rich frontend UI model
+        setRfp({
+          id: rfpData.id.toString(),
+          title: rfpData.title || 'Untitled RFP',
+          client: sumData?.client_name || rfpData.client_name || 'Unknown Client',
+          clientType: 'Enterprise', 
+          deadline: sumData?.deadline || 'TBD',
+          daysRemaining: 14,
+          value: sumData?.value || 'TBD',
+          status: rfpData.current_status || 'pending_review',
+          risk: 'Medium',
+          contractLength: sumData?.contract_length || 'TBD',
+          paymentTerms: sumData?.payment_terms || 'TBD',
+          assignmentStatus: 'unassigned'
+        } as any)
+        // Fetch Architects
+        try {
+            const archData = await fetchApi('/auth/users/architects')
+            setArchitects(archData || [])
+        } catch(e) {
+            console.log("Failed to load architects", e)
+        }
+
+      } catch (e) {
+        console.error("Failed to load RFP", e)
+      }
+    }
+    
+    if (params.id) {
+      loadData()
     }
   }, [params.id])
 
   if (!rfp) return (
     <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
-      <p className="text-zinc-500 font-medium">RFP not found or loading...</p>
-      <Button variant="outline" onClick={() => router.back()}>Go Back</Button>
+      <p className="text-zinc-500 font-medium animate-pulse">Loading RFP Details...</p>
     </div>
   )
 
-  const handleSendMessage = (e?: React.FormEvent, text?: string) => {
+  const handleSendMessage = async (e?: React.FormEvent, text?: string) => {
     e?.preventDefault()
     const msg = text || chatInput
-    if (!msg.trim()) return
+    if (!msg.trim() || isChatLoading) return
 
     setMessages(prev => [...prev, { role: 'user', text: msg }])
     setChatInput('')
+    setIsChatLoading(true)
 
-    // Mock AI response
-    setTimeout(() => {
-      setMessages(prev => [...prev, { 
-        role: 'ai', 
-        text: `Based on the RFP document, the answer involves ${msg.includes('technical') ? 'modernizing the cloud stack with a focus on multitenancy and high availability' : 'a strategic approach to compliance that covers both SOC2 and HIPAA standards'}.` 
-      }])
-    }, 1000)
+    try {
+        const { fetchApi } = await import('@/lib/api')
+        const data = await fetchApi(`/rfps/${params.id}/chat`, {
+            method: 'POST',
+            body: JSON.stringify({
+                message: msg,
+                knowledge_mode: knowledgeMode
+            })
+        })
+        setMessages(prev => [...prev, { role: 'ai', text: data.reply || 'Sorry, I failed to generate a response.' }])
+    } catch(e) {
+        setMessages(prev => [...prev, { role: 'ai', text: 'Error connecting to the AI Advisor. Please try again.' }])
+    } finally {
+        setIsChatLoading(false)
+    }
+  }
+  const handleAssignArchitect = async () => {
+    if (!selectedArchitect || isAssigning) return
+    setIsAssigning(true)
+    try {
+      const { fetchApi } = await import('@/lib/api')
+      await fetchApi(`/rfps/${params.id}/assign-architect`, {
+        method: 'POST',
+        body: JSON.stringify({ architect_id: parseInt(selectedArchitect), notes: '' })
+      })
+      setIsAssignModalOpen(false)
+      // Show visually it is assigned
+      setRfp((prev: any) => ({ ...prev, status: 'assigned_to_sa' }))
+    } catch (e) {
+      console.error("Failed to assign architect", e)
+    } finally {
+      setIsAssigning(false)
+    }
   }
 
   return (
@@ -90,9 +179,13 @@ export default function RfpReviewPage() {
             <Ban className="w-4 h-4" />
             Reject
           </Button>
-          <Button className="h-11 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 shadow-lg shadow-blue-100">
+          <Button 
+            onClick={() => setIsAssignModalOpen(true)}
+            disabled={rfp.status === 'assigned_to_sa'}
+            className="h-11 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 shadow-lg shadow-blue-100"
+          >
             <UserPlus className="w-4 h-4" />
-            Assign Solution Architect
+            {rfp.status === 'assigned_to_sa' ? 'Assigned' : 'Assign Solution Architect'}
           </Button>
         </div>
       </div>
@@ -174,20 +267,10 @@ export default function RfpReviewPage() {
                 </div>
                 <div className="p-6">
                   <div className="space-y-3">
-                    {[
-                      { label: 'Discovery & Planning', value: '2 weeks' },
-                      { label: 'Technical Response', value: '1 week' },
-                      { label: 'Executive Review', value: '3 days' }
-                    ].map((item, i) => (
-                      <div key={i} className="flex items-center justify-between py-1 px-2 hover:bg-zinc-50 rounded-lg transition-colors overflow-hidden group">
-                        <span className="text-zinc-500 font-semibold text-sm group-hover:text-zinc-900 transition-colors">{item.label}</span>
-                        <div className="flex-1 mx-4 border-b border-dotted border-zinc-200" />
-                        <span className="text-zinc-900 font-bold text-sm tracking-tight">{item.value}</span>
-                      </div>
-                    ))}
-                    <div className="pt-4 mt-2 border-t border-zinc-100 flex items-center justify-between px-2">
-                      <span className="text-zinc-900 font-black text-sm uppercase tracking-tighter">Total Effort</span>
-                      <span className="text-blue-600 font-black text-sm tracking-tight bg-blue-50 px-3 py-1 rounded-full border border-blue-100">~24 days</span>
+                    <div className="flex items-center justify-between py-1 px-2 hover:bg-zinc-50 rounded-lg transition-colors overflow-hidden group">
+                      <span className="text-zinc-500 font-semibold text-sm group-hover:text-zinc-900 transition-colors">Estimated Total Effort</span>
+                      <div className="flex-1 mx-4 border-b border-dotted border-zinc-200" />
+                      <span className="text-zinc-900 font-bold text-sm tracking-tight">{aiSummary?.effort_estimation || 'TBD'}</span>
                     </div>
                   </div>
                 </div>
@@ -197,38 +280,40 @@ export default function RfpReviewPage() {
             <Card className="border-zinc-200 shadow-sm overflow-hidden bg-white/50 backdrop-blur-sm">
               <CardContent className="p-0">
                 <div className="p-6 border-b border-zinc-100 bg-zinc-50/50">
-                  <h3 className="font-bold text-zinc-900">Scope Summary</h3>
+                  <h3 className="font-bold text-zinc-900">Extracted AI Summary</h3>
                 </div>
                 <div className="p-8">
                   <p className="text-zinc-600 leading-relaxed font-medium">
-                    {rfp.client} seeks a comprehensive platform to transition their on-premise infrastructure to AWS. 
-                    The solution must support 200+ applications, ensure zero downtime during migration, and provide automated testing and rollback capabilities.
+                    {aiSummary?.summary?.executive_summary || "No executive summary generated yet."}
                   </p>
                 </div>
               </CardContent>
             </Card>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
               <Card className="border-rose-100 shadow-sm overflow-hidden bg-rose-50/10">
                 <CardContent className="p-0">
                   <div className="p-5 border-b border-rose-100 bg-rose-50/20">
                     <h3 className="font-bold text-rose-800 flex items-center gap-2">
                       <AlertTriangle className="w-4 h-4" />
-                      Identified Risks
+                      Pending Risk Assessment
                     </h3>
                   </div>
                   <div className="p-6">
                     <ul className="space-y-4">
-                      {[
-                        'Tight 17-day deadline for comprehensive response',
-                        'Complex compliance requirements (SOC2, HIPAA)',
-                        'Requires specialized cloud architecture expertise'
-                      ].map((risk, i) => (
-                        <li key={i} className="flex items-start gap-3 text-sm text-zinc-600 font-medium">
-                          <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0 shadow-[0_0_8px_rgba(244,63,94,0.4)]" />
-                          {risk}
-                        </li>
-                      ))}
+                      {aiSummary?.summary?.risks && aiSummary.summary.risks.length > 0 ? (
+                        aiSummary.summary.risks.map((risk: any, i: number) => (
+                          <li key={i} className="flex items-start gap-3 text-sm text-zinc-600 font-medium">
+                            <div className={cn(
+                              "mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 shadow-lg",
+                              risk.severity === 'high' ? "bg-rose-500 shadow-rose-200" : "bg-zinc-400"
+                            )} />
+                            <span><strong className="text-zinc-900">{risk.risk}</strong> ({risk.severity})</span>
+                          </li>
+                        ))
+                      ) : (
+                        <li className="text-sm text-zinc-400 italic font-medium">No physical risks identified by AI yet.</li>
+                      )}
                     </ul>
                   </div>
                 </CardContent>
@@ -239,15 +324,15 @@ export default function RfpReviewPage() {
                   <div className="p-5 border-b border-blue-100 bg-blue-50/10">
                     <h3 className="font-bold text-blue-800 flex items-center gap-2">
                       <Sparkles className="w-4 h-4" />
-                      AI Recommendation
+                      AI Next Steps
                     </h3>
                   </div>
                   <div className="p-6 space-y-4">
                     <p className="text-sm text-zinc-900 font-black">
-                      Proceed with high priority. <span className="text-zinc-500 font-medium">Strong strategic fit with our cloud practice.</span>
+                      AI Recommendation: <span className="text-indigo-600 uppercase tracking-tight">{aiSummary?.summary?.recommended_action || "Pending"}</span>
                     </p>
                     <p className="text-sm text-zinc-600 leading-relaxed font-medium">
-                      Recommend assigning Sarah Chen (Senior SA) given her AWS expertise and previous Fortune 500 experience. Budget 120 hours for response development.
+                      {aiSummary?.summary?.next_steps || "Recommend assigning a Solution Architect to verify technical parameters and draft the initial response inside the Workspace."}
                     </p>
                   </div>
                 </CardContent>
@@ -278,11 +363,11 @@ export default function RfpReviewPage() {
                 <div className="mt-8 pt-8 border-t border-zinc-100 flex items-center justify-between">
                   <div className="flex flex-col">
                     <span className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">Aggregate Confidence</span>
-                    <span className="text-sm font-bold text-zinc-500">Based on historical win/loss patterns</span>
+                    <span className="text-sm font-bold text-zinc-500">Based on AI evaluation of requirements</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="h-10 w-px bg-zinc-100" />
-                    <span className="text-4xl font-black text-emerald-600 tracking-tight">73%</span>
+                    <span className="text-4xl font-black text-emerald-600 tracking-tight">{aiSummary?.win_probability ? `${aiSummary.win_probability}%` : 'TBD'}</span>
                   </div>
                 </div>
               </CardContent>
@@ -301,9 +386,17 @@ export default function RfpReviewPage() {
                   </div>
                   <div>
                     <CardTitle className="text-base font-black text-zinc-900 tracking-tight">AI Advisor</CardTitle>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 mt-1">
                       <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Live Analysis</span>
+                      <select 
+                        value={knowledgeMode}
+                        onChange={(e) => setKnowledgeMode(e.target.value)}
+                        className="text-[10px] font-bold text-emerald-600 bg-transparent border-none uppercase tracking-widest outline-none cursor-pointer appearance-none hover:bg-zinc-50 rounded px-1 -ml-1 transition-colors"
+                      >
+                        <option value="Hybrid">Hybrid Mode</option>
+                        <option value="RFP-Only">RFP-Only Mode</option>
+                        <option value="Global">Global Mode</option>
+                      </select>
                     </div>
                   </div>
                 </div>
@@ -389,6 +482,32 @@ export default function RfpReviewPage() {
           </Card>
         </div>
       </div>
+
+      <Dialog open={isAssignModalOpen} onOpenChange={setIsAssignModalOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Assign Solution Architect</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <Select onValueChange={setSelectedArchitect} value={selectedArchitect}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select an architect" />
+              </SelectTrigger>
+              <SelectContent>
+                {architects.map(a => (
+                  <SelectItem key={a.id} value={a.id.toString()}>{a.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAssignModalOpen(false)}>Cancel</Button>
+            <Button onClick={handleAssignArchitect} disabled={!selectedArchitect || isAssigning}>
+              {isAssigning ? 'Assigning...' : 'Assign'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

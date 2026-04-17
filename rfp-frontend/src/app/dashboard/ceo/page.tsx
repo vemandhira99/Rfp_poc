@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Eye, Upload, TrendingUp, AlertCircle, Clock, CheckCircle2, ArrowUpRight } from 'lucide-react'
 import { MOCK_RFPS, DASHBOARD_STATS, RFPStatus, RFPRisk } from '@/lib/mocks/rfpData'
@@ -26,6 +26,13 @@ function StatusBadge({ status }: { status: RFPStatus }) {
     'approved': 'bg-emerald-50 text-emerald-700 border-emerald-200',
     'rejected': 'bg-red-50 text-red-700 border-red-200',
     'on-hold': 'bg-zinc-100 text-zinc-700 border-zinc-200',
+    'queued_for_processing': 'bg-zinc-50 text-zinc-500 border-zinc-200 animate-pulse',
+    'processing_summary': 'bg-blue-50 text-blue-500 border-blue-200 animate-pulse',
+    'assigned_to_sa': 'bg-indigo-50 text-indigo-600 border-indigo-200',
+    'in_drafting': 'bg-purple-50 text-purple-600 border-purple-200 animate-pulse',
+    'under_review': 'bg-amber-50 text-amber-600 border-amber-200',
+    'rate_limit_error': 'bg-rose-50 text-rose-600 border-rose-200',
+    'error': 'bg-red-50 text-red-700 border-red-200',
   }
 
   const labels: Record<RFPStatus, string> = {
@@ -36,12 +43,61 @@ function StatusBadge({ status }: { status: RFPStatus }) {
     'approved': 'Approved',
     'rejected': 'Rejected',
     'on-hold': 'On Hold',
+    'queued_for_processing': 'Queued',
+    'processing_summary': 'AI Analyzing...',
+    'assigned_to_sa': 'SA Assigned',
+    'in_drafting': 'AI Drafting...',
+    'under_review': 'Under Review',
+    'rate_limit_error': 'Quota Exceeded',
+    'error': 'Failed',
   }
 
   return (
     <Badge variant="outline" className={`${styles[status]} font-medium`}>
       {labels[status]}
     </Badge>
+  )
+}
+
+function AIProgressBar({ status }: { status: RFPStatus }) {
+  const [progress, setProgress] = useState(0)
+  
+  useEffect(() => {
+    if (status === 'queued_for_processing') setProgress(15)
+    else if (status === 'processing_summary') {
+      setProgress(30)
+      const timer = setInterval(() => {
+        setProgress(prev => (prev < 90 ? prev + 1 : prev))
+      }, 500)
+      return () => clearInterval(timer)
+    } else if (status === 'in_drafting') {
+      setProgress(60)
+      const timer = setInterval(() => {
+        setProgress(prev => (prev < 95 ? prev + 0.5 : prev))
+      }, 500)
+      return () => clearInterval(timer)
+    } else {
+      setProgress(100)
+    }
+  }, [status])
+
+  if (progress === 100 || !['queued_for_processing', 'processing_summary', 'in_drafting'].includes(status)) {
+    return null
+  }
+
+  return (
+    <div className="w-full max-w-[120px] mt-2">
+      <div className="flex justify-between mb-1">
+        <span className="text-[10px] font-medium text-blue-600 animate-pulse">Processing...</span>
+        <span className="text-[10px] font-medium text-blue-600">{Math.round(progress)}%</span>
+      </div>
+      <div className="w-full bg-zinc-100 rounded-full h-1.5 overflow-hidden">
+        <div 
+          className="bg-blue-600 h-1.5 rounded-full transition-all duration-500 ease-out shadow-[0_0_8px_rgba(37,99,235,0.4)]"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+    </div>
   )
 }
 
@@ -64,18 +120,90 @@ export default function CEODashboard() {
   const router = useRouter()
   const [searchTerm, setSearchTerm] = useState('')
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
+  
+  const [rfps, setRfps] = useState<any[]>([])
+  const [stats, setStats] = useState<any>({
+    activeRFPs: 0,
+    pendingReview: 0,
+    totalValue: 0,
+    dueThisWeek: 0,
+    approvedThisQuarter: 0,
+    rejectedThisQuarter: 0,
+    awaitingClarification: 0
+  })
+  const [loading, setLoading] = useState(true)
 
-  const filteredRFPs = MOCK_RFPS.filter(
+  async function loadData() {
+    try {
+      const { fetchApi } = await import('@/lib/api')
+      const [statsData, rfpsData] = await Promise.all([
+        fetchApi('/rfps/dashboard-summary'),
+        fetchApi('/rfps/')
+      ])
+      
+      setStats({
+        activeRFPs: statsData.total,
+        pendingReview: statsData.under_review,
+        totalValue: statsData.total_value || 0,
+        dueThisWeek: 0,
+        approvedThisQuarter: statsData.approved,
+        rejectedThisQuarter: statsData.rejected,
+        awaitingClarification: 0
+      })
+
+      // Map backend rfps
+      const rfpsMapped = rfpsData.map((r: any) => {
+        let summary: any = null
+        if (r.summary_json) {
+          try { summary = JSON.parse(r.summary_json) } catch(e) {}
+        }
+        
+        return {
+          ...r,
+          title: r.title || 'Untitled',
+          client: summary?.client_name || r.client_name || 'Unknown',
+          risk: summary?.risks?.length ? 'high' : 'medium',
+          status: r.current_status,
+          value: summary?.value || '₹0',
+          deadline: summary?.deadline || 'TBD',
+          effort: summary?.effort_estimation || 'TBD'
+        }
+      })
+      setRfps(rfpsMapped)
+      
+    } catch(err) {
+      console.error("Failed to load backend data", err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+    const interval = setInterval(loadData, 10000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const filteredRFPs = rfps.filter(
     (rfp) => 
-      rfp.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      rfp.client.toLowerCase().includes(searchTerm.toLowerCase())
+      rfp.title?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      rfp.client?.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
+  const formatCurrency = (val: number) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0
+    }).format(val)
+  }
+
   const statsArr = [
-    { label: 'Active RFPs', value: DASHBOARD_STATS.activeRFPs, icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { label: 'Pending Review', value: DASHBOARD_STATS.pendingReview, icon: Clock, color: 'text-orange-600', bg: 'bg-orange-50' },
-    { label: 'Total Value', value: DASHBOARD_STATS.totalValue, icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { label: 'Due This Week', value: DASHBOARD_STATS.dueThisWeek, icon: AlertCircle, color: 'text-rose-600', bg: 'bg-rose-50' },
+    { label: 'Active RFPs', value: stats.activeRFPs, icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { label: 'Pending Review', value: stats.pendingReview, icon: Clock, color: 'text-orange-600', bg: 'bg-orange-50' },
+    { label: 'Total Pipeline', value: formatCurrency(stats.totalValue), icon: TrendingUp, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { label: 'Approved', value: stats.approvedThisQuarter, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { label: 'Rejected', value: stats.rejectedThisQuarter, icon: AlertCircle, color: 'text-rose-600', bg: 'bg-rose-50' },
   ]
 
   return (
@@ -158,11 +286,22 @@ export default function CEODashboard() {
                 <TableCell className="text-zinc-600 py-4">{rfp.client}</TableCell>
                 <TableCell className="py-4">
                   <div className="text-zinc-900">{rfp.deadline}</div>
-                  <div className="text-xs text-rose-600 font-medium">{rfp.daysRemaining} days left</div>
+                  {rfp.effort !== 'TBD' && (
+                    <div className="text-xs text-blue-600 font-medium">Est. effort: {rfp.effort}</div>
+                  )}
                 </TableCell>
                 <TableCell className="font-medium text-zinc-900 py-4 hidden md:table-cell">{rfp.value}</TableCell>
                 <TableCell className="py-4">
-                  <StatusBadge status={rfp.status} />
+                  <div className="flex flex-col">
+                    <StatusBadge status={rfp.status} />
+                    <AIProgressBar status={rfp.status} />
+                    {rfp.status === 'error' && (
+                      <span className="text-[10px] text-red-500 mt-1 font-medium italic">Internal AI Error. Check Logs.</span>
+                    )}
+                    {rfp.status === 'rate_limit_error' && (
+                      <span className="text-[10px] text-orange-600 mt-1 font-semibold animate-pulse italic">Gemini Quota Reached. Waiting 60s...</span>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell className="py-4">
                   <RiskBadge risk={rfp.risk} />

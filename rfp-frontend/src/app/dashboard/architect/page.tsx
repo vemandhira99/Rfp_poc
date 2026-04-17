@@ -6,54 +6,43 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense } from 'react'
 import { cn } from '@/lib/utils'
 
+import { useState, useEffect } from 'react'
+
 function AssignedRfpsContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const q = searchParams.get('q')?.toLowerCase() || ''
 
-  const allRfps = [
-    {
-      id: "rfp-1",
-      title: "Enterprise Cloud Migration Platform",
-      client: "Global Tech Corp",
-      deadline: "2026-04-25",
-      daysLeft: 15,
-      complexity: "High",
-      complexityType: "high",
-      status: "In Progress",
-      statusType: "progress",
-      assignedBy: "Yash Kanvinde",
-      description: "Complete transition of on-premise infrastructure to AWS with zero-downtime requirements."
-    },
-    {
-      id: "rfp-2",
-      title: "Healthcare Data Analytics Solution",
-      client: "MediCare Systems",
-      deadline: "2026-04-15",
-      daysLeft: 5,
-      complexity: "Critical",
-      complexityType: "critical",
-      status: "New",
-      statusType: "new",
-      assignedBy: "Michael Chen",
-      description: "HIPAA-compliant analytics platform for real-time patient data processing and reporting."
-    },
-    {
-      id: "rfp-3",
-      title: "Retail CX Portal",
-      client: "RetailMax",
-      deadline: "2026-05-10",
-      daysLeft: 30,
-      complexity: "Medium",
-      complexityType: "medium",
-      status: "Review",
-      statusType: "review",
-      assignedBy: "Yash Kanvinde",
-      description: "Customer experience portal integrating loyalty programs and omnichannel support."
-    }
-  ]
+  const [rfps, setRfps] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const rfps = allRfps.filter(rfp => rfp.title.toLowerCase().includes(q) || rfp.client.toLowerCase().includes(q))
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const { fetchApi } = await import('@/lib/api')
+        const data = await fetchApi('/rfps/assigned-to-me')
+        setRfps(data.map((r: any) => ({
+          ...r,
+          client: r.client_name || 'Unknown',
+          daysLeft: r.deadline ? Math.ceil((new Date(r.deadline).getTime() - Date.now()) / (1000 * 3600 * 24)) : 14,
+          complexity: "Medium", // default stub
+          complexityType: "medium", // default stub
+          status: r.current_status,
+          statusType: r.current_status === 'assigned_to_sa' ? 'new' : 
+                      r.current_status === 'in_drafting' ? 'progress' : 'review',
+          assignedBy: r.assigned_by_name || 'System',
+          description: "RFP assigned to you." // default stub
+        })))
+      } catch (err) {
+        console.error("Failed to load backend data", err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadData()
+  }, [])
+
+  const filteredRfps = rfps.filter(rfp => rfp.title.toLowerCase().includes(q) || rfp.client.toLowerCase().includes(q))
 
   return (
     <div className="space-y-8 pb-10 pt-2 min-h-screen w-full relative">
@@ -69,7 +58,7 @@ function AssignedRfpsContent() {
         <div className="flex items-center gap-6">
           <div className="text-right">
             <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1">Total Active</p>
-            <p className="text-2xl font-black text-indigo-600 leading-none">{rfps.length}</p>
+            <p className="text-2xl font-black text-indigo-600 leading-none">{filteredRfps.length}</p>
           </div>
           <div className="h-10 w-px bg-zinc-200" />
           <div className="text-right">
@@ -80,7 +69,7 @@ function AssignedRfpsContent() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 relative z-10">
-        {rfps.length === 0 ? (
+        {filteredRfps.length === 0 ? (
           <div className="py-20 text-center">
             <div className="w-16 h-16 bg-zinc-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-zinc-100">
                <Search className="w-6 h-6 text-zinc-300" />
@@ -88,7 +77,7 @@ function AssignedRfpsContent() {
             <p className="text-zinc-500 text-sm font-bold">No RFPs match your search "{q}".</p>
           </div>
         ) : (
-          rfps.map((rfp) => (
+          filteredRfps.map((rfp) => (
             <Card key={rfp.id} className="glass-card hover-lift rounded-3xl overflow-hidden border-white/60 group shadow-lg shadow-zinc-200/20">
               <CardContent className="p-0">
                 <div className="flex flex-col xl:flex-row">
@@ -172,7 +161,7 @@ function AssignedRfpsContent() {
                   {/* Right Section: Action */}
                   <div className="xl:w-48 bg-zinc-50/50 xl:border-l border-zinc-100 flex items-center justify-center p-6 xl:p-0">
                     <button 
-                      onClick={() => router.push('/dashboard/architect/workspace')}
+                      onClick={() => router.push(`/dashboard/architect/workspace?id=${rfp.id}`)}
                       className="w-full xl:h-full flex xl:flex-col items-center justify-center gap-3 xl:gap-4 text-zinc-400 hover:text-indigo-600 hover:bg-white transition-all group/btn py-4 xl:py-0"
                     >
                       <div className="w-12 h-12 rounded-2xl bg-white border border-zinc-200 flex items-center justify-center shadow-sm group-hover/btn:border-indigo-200 group-hover/btn:shadow-indigo-100 group-hover/btn:scale-110 transition-all">

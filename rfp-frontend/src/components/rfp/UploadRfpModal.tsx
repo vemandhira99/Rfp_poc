@@ -26,17 +26,19 @@ interface UploadRfpModalProps {
   onClose: () => void
 }
 
-type UploadStep = 'selection' | 'upload'
+type UploadStep = 'selection' | 'upload' | 'success'
 
 export function UploadRfpModal({ isOpen, onClose }: UploadRfpModalProps) {
   const [step, setStep] = useState<UploadStep>('selection')
   const [isDragging, setIsDragging] = useState(false)
   const [files, setFiles] = useState<File[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [progress, setProgress] = useState(0)
 
   const handleClose = () => {
     setStep('selection')
     setFiles([])
+    setProgress(0)
     onClose()
   }
 
@@ -75,10 +77,61 @@ export function UploadRfpModal({ isOpen, onClose }: UploadRfpModalProps) {
     fileInputRef.current?.click()
   }
 
-  const handleUpload = () => {
-    // In a real app, this would handle the upload process
-    console.log('Uploading files:', files)
-    handleClose()
+  const [isUploading, setIsUploading] = useState(false)
+  
+  const handleUpload = async () => {
+    if (files.length === 0) return;
+    setIsUploading(true)
+    
+    try {
+      const formData = new FormData()
+      formData.append('file', files[0])
+      formData.append('title', files[0].name.replace(/\.[^/.]+$/, "")) 
+      formData.append('client_name', 'Unknown')
+      
+      const { API_BASE_URL } = await import('@/lib/api')
+      const token = localStorage.getItem('rfp_token');
+
+      const response = await fetch(`${API_BASE_URL}/uploads/rfp`, {
+        method: 'POST',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: formData,
+      })
+
+      if (!response.ok) {
+        throw new Error('Upload failed')
+      }
+      
+      const data = await response.json();
+      
+      // Auto-trigger parsing (Asynchronously)
+      fetch(`${API_BASE_URL}/uploads/rfp/${data.document_id}/parse`, {
+        method: 'POST',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
+      })
+      
+      // Show success step
+      setStep('success')
+      let p = 0
+      const interval = setInterval(() => {
+        p += 2
+        if (p > 100) {
+          clearInterval(interval)
+        } else {
+          setProgress(p)
+        }
+      }, 50)
+
+    } catch (err) {
+      console.error(err);
+      alert('Upload or parsing failed. Check console.');
+    } finally {
+      setIsUploading(false)
+    }
   }
 
   return (
@@ -106,7 +159,7 @@ export function UploadRfpModal({ isOpen, onClose }: UploadRfpModalProps) {
                 </div>
               </button>
             </div>
-          ) : (
+          ) : step === 'upload' ? (
             <div className="space-y-6">
               <button 
                 onClick={handleBack}
@@ -160,11 +213,11 @@ export function UploadRfpModal({ isOpen, onClose }: UploadRfpModalProps) {
               <div className="flex flex-col sm:flex-row gap-3 pt-2">
                 <Button 
                   onClick={handleUpload}
-                  disabled={files.length === 0}
+                  disabled={files.length === 0 || isUploading}
                   className="flex-1 h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-200 disabled:opacity-50 disabled:shadow-none"
                 >
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload File
+                  <Upload className={cn("w-4 h-4 mr-2", isUploading && "animate-bounce")} />
+                  {isUploading ? 'Uploading & Analyzing...' : 'Upload File'}
                 </Button>
                 <Button 
                   variant="outline" 
@@ -172,6 +225,41 @@ export function UploadRfpModal({ isOpen, onClose }: UploadRfpModalProps) {
                   className="h-12 border-zinc-200 text-zinc-700 hover:bg-zinc-50 font-bold rounded-xl px-8"
                 >
                   Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="py-8 flex flex-col items-center text-center space-y-6">
+              <div className="w-20 h-20 rounded-full bg-emerald-50 flex items-center justify-center animate-in zoom-in duration-500">
+                <CheckCircle2 className="w-10 h-10 text-emerald-500" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-xl font-bold text-zinc-900">RFP Uploaded Successfully!</h3>
+                <p className="text-zinc-500">AI Analysis has started in the background.</p>
+              </div>
+              
+              <div className="w-full space-y-2">
+                <div className="flex justify-between text-sm font-medium">
+                  <span className="text-zinc-500">Processing Document</span>
+                  <span className="text-blue-600">{progress}%</span>
+                </div>
+                <div className="w-full bg-zinc-100 rounded-full h-2.5 overflow-hidden">
+                  <div 
+                    className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="pt-4 w-full">
+                <Button 
+                  onClick={() => {
+                    handleClose()
+                    window.location.reload()
+                  }}
+                  className="w-full h-12 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl font-bold"
+                >
+                  Go to Dashboard
                 </Button>
               </div>
             </div>

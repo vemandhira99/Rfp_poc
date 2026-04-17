@@ -1,0 +1,160 @@
+Table of Contents
+1. Executive Summary	6
+2. Understanding of RFP Requirements	8
+2.1 Functional Requirements	8
+2.2 Non-Functional Requirements	10
+3. Proposed IFHRMS Solution Overview	11
+3.1 Overall System Architecture	11
+3.2 Functional Module Coverage	12
+3.3 Akashic Platform Enablement	13
+3.4 Integration Architecture	14
+3.5 Implementation Timeline Alignment	15
+3.6 Operational Support Framework	15
+3.7 Summary of Proposed Solution	15
+4. Detailed Functional Solution Architecture	16
+4.1 Budget Management	16
+4.2 Commitment Management	17
+4.3 Contract Management	18
+4.4 Sanction and Expenditure Management	19
+4.5 Human Resource Management	20
+4.6 Receipt Management	21
+4.7 Payment Management	21
+4.8 Grant Management	22
+4.9 Project Management	22
+4.10 Asset Management	22
+4.11 General Ledger and Accounting	22
+4.12 Data Analytics and Reporting	22
+4.13 System Administration	23
+4.14 Master Data Management	23
+4.15 Detailed Functional Requirement Specification (FRS) Coverage	23
+A. Financial Management Functional Requirements Coverage	23
+B. Human Resource Management Functional Requirements Coverage	29
+C. Common Platform Functional Requirements Coverage	31
+4.16 IFHRMS Functional Module Coverage Summary	32
+4.17 User Roles Supported by the IFHRMS Platform	34
+4.18 Reporting and Analytical Capabilities	34
+5. Integration Architecture	35
+5.1 Integration Architecture Overview	36
+5.2 Payment Gateway Integration	36
+5.3 Receipt System Integration	37
+5.4 Banking System Integration	38
+5.5 Data Ingestion and Processing Framework	39
+5.6 Integration Governance	39
+5.7 Summary of Integration Architecture	39
+6. Data Migration Strategy	40
+6.1 Data Migration Objectives	40
+6.2 Data Sources for Migration	41
+6.3 Data Migration Framework	41
+6.4 Role of Akashic ETL / Rules Engine	42
+6.5 Data Validation and Reconciliation	42
+6.6 Migration Execution Phases	43
+6.7 Data Migration Governance	43
+6.8 Summary of Data Migration Strategy	43
+7. Implementation Strategy	44
+7.1 Implementation Objectives	44
+7.2 Implementation Phases	45
+7.3 Implementation Timeline	45
+7.4 Implementation Governance	46
+7.5 Integration Implementation	46
+7.6 Testing Strategy	47
+7.7 Training and Change Management	47
+7.8 Summary of Implementation Strategy	47
+8. Project Governance and Resource Deployment	48
+8.1 Project Governance Framework	48
+8.2 Operational Support Model	49
+8.3 Helpdesk Staffing Requirements	49
+8.4 Support Responsibilities	50
+8.5 Summary of Governance and Resource Deployment	50
+9. Testing and Quality Assurance Strategy	50
+9.1 Testing Objectives	51
+9.2 Testing Framework	51
+9.3 Unit Testing	52
+9.4 System Integration Testing	52
+9.5 Data Validation Testing	52
+9.6 User Acceptance Testing (UAT)	53
+9.7 Defect Management	53
+9.8 Testing Governance	54
+9.9 Summary of Testing Strategy	54
+10. Training and Change Management	54
+10.1 Training Objectives	55
+10.2 User Categories for Training	55
+10.3 Training Coverage	56
+10.4 Training Methodology	56
+10.5 Training Materials	56
+10.6 Knowledge Transfer	57
+10.7 Change Management Approach	57
+10.8 Summary of Training and Change Management	57
+11. Operations and Maintenance Strategy	58
+11.1 Operational Support Objectives	58
+11.2 Post Go-Live Stabilization	58
+11.3 Operations and Maintenance Period	59
+11.4 Application Support Services	59
+11.5 Helpdesk Operations	60
+11.6 System Monitoring	60
+11.7 SLA Compliance Monitoring	60
+11.8 Summary of Operations and Maintenance Strategy	61
+12. Security and Compliance Framework	61
+12.1 Security Objectives	62
+12.2 User Access Control	62
+12.3 Data Security	62
+12.4 Transaction Auditability	63
+12.5 Integration Security	63
+12.6 Data Governance and Monitoring	63
+12.7 System Availability and Reliability	64
+12.8 Summary of Security Framework	64
+13. Service Level Agreements (SLA) and Performance Monitoring	65
+13.1 SLA Objectives	65
+13.2 Summary of SLA Framework	65
+14. Risk Management and Mitigation Strategy	66
+14.1 Risk Management Objectives	66
+14.2 Risk Identification	66
+14.3 Risk Mitigation Strategies	67
+14.4 Risk Monitoring	68
+14.5 Risk Governance	68
+14.6 Summary of Risk Management Strategy	68
+15. Conclusion	69
+16. Annexure 1- Compliance with RFP Requirements	70
+16.1 Functional Requirement Traceability Matrix	70
+16.2 HR Functional Requirement Traceability	72
+16.3 Integration Requirement Compliance	73
+16.4 Implementation Requirement Compliance	73
+16.5 Operational Support Compliance	74
+16.6 Governance and Monitoring Compliance	74
+16.7 Summary of Compliance	74
+16.8 Functional Requirement Clause Traceability Matrix	74
+17. Annexure 2 - Technical Architecture	77
+18. Annexure 3 - Implementation Strategy, Methodology and Proposed Team	84
+19. Annexure 4 - Technical Qualification Compliance and Evidence Matrix	87
+
+ 
+1. Executive Summary
+The Central Board of Secondary Education (CBSE) has initiated the development and implementation of an Integrated Financial and Human Resource Management System (IFHRMS) to modernize and streamline its financial management and human resource processes. The proposed IFHRMS aims to bring together multiple financial and administrative processes under a unified digital platform, enabling improved operational efficiency, transparency, compliance with financial regulations, and enhanced decision-making capabilities across CBSE’s organizational units.
+This Request for Proposal (RFP) outlines CBSE’s objective to design, develop, implement, operate, and maintain an integrated system that consolidates key financial and HR processes including budgeting, commitment management, sanction and expenditure management, accounting, asset management, project and grant management, employee lifecycle management, payroll administration, and related reporting functions. The RFP also emphasizes the need for a centralized platform that ensures role-based access, automated workflows, standardized master data management, integration with external systems such as payment aggregators and existing receipt systems, and robust auditability across all transactions.
+In response to these requirements, we propose the implementation of a comprehensive IFHRMS solution built on a combination of ERPNext as the core enterprise resource planning platform and the Akashic Unified Data Platform for data governance, analytics, and rule-driven operational oversight. This combined approach allows the solution to address the operational transaction processing requirements described in the RFP while ensuring that governance, reporting, and institutional oversight capabilities are implemented consistently across all functional modules.
+Within the proposed architecture, ERPNext will serve as the primary transactional system responsible for managing core financial and human resource processes including budgeting, accounting, payroll, asset management, employee lifecycle management, project tracking, grant administration, and receipt and payment processing. ERPNext provides configurable workflows, structured master data management capabilities, and modular functionality that aligns closely with the functional requirements described in the RFP for the IFHRMS system.
+Complementing this core system, the Akashic Unified Data Platform will support data governance, analytics, and monitoring functions across the IFHRMS ecosystem. Through components such as rules-driven validation mechanisms, master data governance frameworks, and business intelligence capabilities, Akashic enables structured oversight of financial and administrative data while supporting consolidated reporting and institutional-level analysis required by CBSE.
+The proposed solution has been structured to address all functional areas described in the RFP, including:
+1.	Budget Management
+2.	Commitment Management
+3.	Contract Management
+4.	Sanction and Expenditure Management
+5.	Human Resource Management
+6.	Receipt Management
+7.	Payment Management
+8.	Grant Management
+9.	Project Management
+10.	Asset Management
+11.	General Ledger and Accounting
+12.	Data Analytics and Reporting
+13.	System Administration
+14.	Master Data Management
+In addition to supporting these modules, the solution architecture also accommodates the integration requirements specified in the RFP, including the use of a centralized payment aggregator for payment processing and reconciliation, interaction with multiple existing receipt collection systems currently in use within CBSE, and automated exchange of financial transaction information with banking systems for reconciliation and reporting purposes.
+The implementation approach proposed by us emphasizes a structured project delivery methodology covering requirement validation, system design, configuration and development, testing, user acceptance, training, deployment, and post–go-live support. The project will be executed through clearly defined implementation milestones, with defined stabilization and operations phases to ensure system continuity and support after deployment.
+The overall objective of the proposed solution is to provide CBSE with a unified IFHRMS platform that ensures consistency in financial and human resource processes, strengthens institutional oversight, improves operational transparency, and enables timely and accurate reporting across the organization.
+By aligning the system architecture, functional coverage, and implementation methodology directly with the requirements defined in the RFP, DHIRA Software Labs aims to deliver a reliable, scalable, and compliant IFHRMS solution that supports CBSE’s operational and governance objectives.
+2. Understanding of RFP Requirements
+The Central Board of Secondary Education (CBSE) has issued this Request for Proposal (RFP) to select a System Integrator for the design, development, implementation, operations, and maintenance of an Integrated Financial and Human Resource Management System (IFHRMS). The objective of the IFHRMS initiative is to establish a unified enterprise platform that integrates financial management and human resource administration processes within CBSE.
+The RFP describes a system architecture that consolidates operational, financial, and administrative processes into a centralized digital platform capable of supporting standardized workflows, institutional governance, and reliable reporting. The proposed IFHRMS platform must support fourteen (14) functional modules and integrate with twelve (12) existing receipt collection systems, while ensuring system availability, operational support, and compliance with defined service level agreements.
+The following sections summarize the functional and non-functional requirements identified in the RFP.
+2.1 Functional Requirements
+The IFHRMS platform must support multiple financial and human resource processes through a set of 14 functional modules identified in the RFP. These modules collectively support the lifecycle of financial transactions, employee administration, and institutional reporting. [Content omitted for brevity in system prompt but should be used by AI]
