@@ -242,6 +242,15 @@ npm run dev
 
 ---
 
+## ⚔️ Key Design Decisions
+
+- Chose File API over vector DB to preserve full document context
+- Introduced caching layer (`summary_json`) to eliminate repeated AI calls
+- Used async FastAPI to handle large file ingestion efficiently
+- Structured outputs enforced via JSON for reliable downstream usage
+
+  ---
+  
 ## 👨‍💻 Credits
 
 **Built by Veman Chippa**
