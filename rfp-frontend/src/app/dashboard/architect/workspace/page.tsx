@@ -17,6 +17,7 @@ function WorkspaceDetailContent() {
   const [loading, setLoading] = useState(true)
   const [draftContent, setDraftContent] = useState('')
   const [isRegenerating, setIsRegenerating] = useState(false)
+  const [progress, setProgress] = useState<{current: number, total: number} | null>(null)
   const [chatInput, setChatInput] = useState('')
   const [knowledgeMode, setKnowledgeMode] = useState('Hybrid')
   const [isChatLoading, setIsChatLoading] = useState(false)
@@ -98,16 +99,36 @@ function WorkspaceDetailContent() {
   const handleRegenerateDraft = async () => {
     if(isRegenerating) return;
     setIsRegenerating(true);
+    setProgress({current: 0, total: 21});
     try {
       const { fetchApi } = await import('@/lib/api')
-      const data = await fetchApi(`/ai/rfp/${rfpId}/draft`, { method: 'POST' })
-      if(data && data.draft && data.draft.draft_outline) {
-         setDraftContent(data.draft.draft_outline + "\n\n" + data.draft.technical_approach)
-      }
+      await fetchApi(`/rfps/${rfpId}/regenerate`, { method: 'POST' })
+      
+      // Start polling
+      const poll = setInterval(async () => {
+        try {
+          const progData = await fetchApi(`/rfps/${rfpId}/generation-progress`)
+          setProgress({current: progData.current, total: progData.total})
+          if(progData.status === 'completed' || progData.current >= 21) {
+            clearInterval(poll)
+            setIsRegenerating(false)
+            // Refresh draft content
+            const draftData = await fetchApi(`/rfps/${rfpId}/draft`)
+            setDraft(draftData)
+            setDraftContent(draftData.draft_content || '')
+            setProgress(null)
+          }
+        } catch(e) {
+          clearInterval(poll)
+          setIsRegenerating(false)
+          setProgress(null)
+        }
+      }, 3000)
+
     } catch (e) {
-      alert("Failed to generate AI Draft.")
-    } finally {
+      alert("Failed to start regeneration.")
       setIsRegenerating(false);
+      setProgress(null)
     }
   }
 
@@ -197,7 +218,17 @@ function WorkspaceDetailContent() {
               <Download className="w-5 h-5" />
             </div>
             <p className="text-base font-bold text-zinc-900 group-hover:text-indigo-600 transition-colors tracking-tight">Response_Draft_v{draft?.version || 1}.docx</p>
-            <p className="text-xs font-medium text-zinc-500 mt-1">Ready for export</p>
+            <p className="text-xs font-medium text-zinc-500 mt-1">
+              {isRegenerating ? `Generating section ${progress?.current || 0} of ${progress?.total || 21}...` : 'Ready for export'}
+            </p>
+            {isRegenerating && (
+              <div className="w-full bg-indigo-100 h-1.5 rounded-full mt-4 overflow-hidden">
+                <div 
+                  className="bg-indigo-600 h-full transition-all duration-500" 
+                  style={{ width: `${((progress?.current || 0) / (progress?.total || 21)) * 100}%` }}
+                />
+              </div>
+            )}
           </div>
         </div>
 

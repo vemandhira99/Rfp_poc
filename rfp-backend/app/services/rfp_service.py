@@ -12,24 +12,29 @@ def get_rfp_by_id(db: Session, rfp_id: int):
 
 def get_dashboard_summary(db: Session):
     from app.models.rfp import RFPMetadata
-    total    = db.query(func.count(RFPDocument.id)).scalar()
-    # Standardizing counts based on actual lifecycle statuses
-    uploaded = db.query(func.count(RFPDocument.id)).filter(RFPDocument.current_status == "uploaded").scalar()
-    # RFPs which have summaries or are being refined
-    review   = db.query(func.count(RFPDocument.id)).filter(RFPDocument.current_status.in_(["summary_generated", "under_review", "awaiting_ceo_decision"])).scalar()
-    approved = db.query(func.count(RFPDocument.id)).filter(RFPDocument.current_status == "approved").scalar()
-    rejected = db.query(func.count(RFPDocument.id)).filter(RFPDocument.current_status == "rejected").scalar()
+    # Total active RFPs (excluding failed/error states)
+    total    = db.query(func.count(RFPDocument.id)).filter(RFPDocument.current_status != "error").scalar()
     
-    # Bidding Amount Metric (Total Value)
-    # Sum of budget from RFPMetadata or previously extracted AI values
+    # RFPs awaiting CEO/Admin review
+    review   = db.query(func.count(RFPDocument.id)).filter(
+        RFPDocument.current_status.in_(["pending-review", "summary_generated", "under_review", "awaiting_ceo_decision"])
+    ).scalar()
+    
+    approved = db.query(func.count(RFPDocument.id)).filter(RFPDocument.current_status.in_(["approved", "assigned_to_sa"])).scalar()
+    rejected = db.query(func.count(RFPDocument.id)).filter(RFPDocument.current_status == "rejected").scalar()
+    on_hold  = db.query(func.count(RFPDocument.id)).filter(RFPDocument.current_status == "on_hold").scalar()
+    assigned = db.query(func.count(RFPDocument.id)).filter(RFPDocument.current_status == "assigned_to_sa").scalar()
+    
     total_val = db.query(func.sum(RFPMetadata.estimated_value)).scalar() or 0
     
     return {
         "total": total, 
-        "uploaded": uploaded, 
+        "uploaded": 0, 
         "under_review": review,
         "approved": approved, 
         "rejected": rejected,
+        "on_hold": on_hold,
+        "assigned": assigned,
         "total_value": float(total_val)
     }
 
@@ -58,6 +63,18 @@ def save_decision(db: Session, rfp_id: int, user_id: int, decision: str, reason:
         rfp.current_status = status_map.get(decision, rfp.current_status)
     log = AuditLog(rfp_id=rfp_id, user_id=user_id, action=f"decision_{decision}", new_value=reason)
     db.add(log)
+    
+    # Create notification
+    from app.services.notification_service import create_notification
+    action_label = decision.replace('_', ' ').capitalize()
+    create_notification(
+        db,
+        user_id=rfp.uploaded_by,
+        message=f"RFP '{rfp.title}' has been {action_label}. Reason: {reason[:50]}...",
+        rfp_id=rfp_id,
+        type="info" if decision == "on_hold" else "success" if decision == "approved" else "error"
+    )
+    
     db.commit()
     return approval
 

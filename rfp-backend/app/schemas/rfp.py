@@ -43,7 +43,9 @@ class DashboardSummary(BaseModel):
     under_review: int
     approved: int
     rejected: int
+    on_hold: int
     assigned: int
+    total_value: float
 
 class DraftCreate(BaseModel):
     draft_content: str
@@ -64,6 +66,7 @@ class DraftOut(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     knowledge_mode: str = "Hybrid"
+    history: Optional[list] = None
 
 class DraftRequest(BaseModel):
     content: str

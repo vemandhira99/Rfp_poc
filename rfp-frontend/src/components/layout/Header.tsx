@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Bell, Search, LogOut, User as UserIcon, Settings as SettingsIcon, PanelLeftOpen } from 'lucide-react'
+import { Bell, Search, LogOut, User as UserIcon, Settings as SettingsIcon, PanelLeftOpen, X } from 'lucide-react'
 import { User } from '@/lib/mocks/rfpData'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
@@ -66,8 +66,16 @@ export function Header({ showSidebarToggle, onSidebarToggle }: HeaderProps) {
 
   const dashboardPath = user.role === 'pm' ? '/dashboard/ceo' : '/dashboard/architect'
 
-  return (
-    <header className="h-16 border-b border-zinc-200 bg-white px-8 flex items-center justify-between sticky top-0 z-40 w-full transition-all duration-300">
+    const clearAll = async () => {
+      try {
+        const { fetchApi } = await import('@/lib/api')
+        await fetchApi('/rfps/notifications/clear-all', { method: 'POST' })
+        setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+      } catch (e) {}
+    }
+
+    return (
+      <header className="h-16 border-b border-zinc-200 bg-white px-8 flex items-center justify-between sticky top-0 z-40 w-full transition-all duration-300">
       <div className="flex items-center gap-4">
         {showSidebarToggle && (
           <button 
@@ -119,9 +127,17 @@ export function Header({ showSidebarToggle, onSidebarToggle }: HeaderProps) {
           <DropdownMenuContent align="end" className="w-80 bg-white border border-zinc-200 shadow-lg rounded-xl p-0 overflow-hidden">
             <div className="p-4 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
               <p className="text-sm font-bold text-zinc-900">Notifications</p>
-              {notifications.length > 0 && (
+              <div className="flex items-center gap-3">
+                {notifications.some(n => !n.is_read) && (
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); clearAll(); }}
+                    className="text-[10px] font-black uppercase text-blue-600 hover:text-blue-700 transition-colors"
+                  >
+                    Clear All
+                  </button>
+                )}
                 <span className="text-[10px] font-black uppercase text-zinc-400">{notifications.length} total</span>
-              )}
+              </div>
             </div>
             <div className="max-h-96 overflow-y-auto">
               {notifications.length > 0 ? (

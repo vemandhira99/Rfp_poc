@@ -32,8 +32,8 @@ export default function DashboardLayout({
           showSidebarToggle={!isSidebarVisible} 
           onSidebarToggle={() => setIsSidebarVisible(true)} 
         />
-        <main className="flex-1 overflow-y-auto bg-zinc-50/30 p-8">
-          <div className="max-w-[1400px] mx-auto h-full">
+        <main className="flex-1 overflow-y-auto bg-zinc-50/30 p-4 md:p-8">
+          <div className="max-w-[1400px] mx-auto">
             {children}
           </div>
         </main>

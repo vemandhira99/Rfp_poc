@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { 
   CheckCircle2, 
@@ -14,7 +14,7 @@ import {
   DollarSign,
   Calendar
 } from 'lucide-react'
-import { MOCK_RFPS, RFPStatus } from '@/lib/mocks/rfpData'
+import { RFPStatus } from '@/lib/mocks/rfpData'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -26,17 +26,61 @@ export default function ApprovalsPage() {
   const [filter, setFilter] = useState<RFPStatus | 'all'>('all')
   const [searchQuery, setSearchQuery] = useState('')
 
-  const stats = {
-    approved: MOCK_RFPS.filter(r => r.status === 'approved').length,
-    rejected: MOCK_RFPS.filter(r => r.status === 'rejected').length,
-    onHold: MOCK_RFPS.filter(r => r.status === 'on-hold').length,
-    total: MOCK_RFPS.length
+  const [rfps, setRfps] = useState<any[]>([])
+  const [stats, setStats] = useState({ approved: 0, rejected: 0, onHold: 0, total: 0 })
+  const [loading, setLoading] = useState(true)
+
+  async function loadData() {
+    try {
+      const { fetchApi } = await import('@/lib/api')
+      const [rfpsData, statsData] = await Promise.all([
+        fetchApi('/rfps/'),
+        fetchApi('/rfps/dashboard-summary')
+      ])
+      
+      const mapped = rfpsData.map((r: any) => {
+        let summary: any = null
+        if (r.summary_json) {
+          try { summary = JSON.parse(r.summary_json) } catch(e) {}
+        }
+        return {
+          ...r,
+          status: r.current_status,
+          value: summary?.value || '₹0',
+          deadline: summary?.deadline || 'TBD'
+        }
+      })
+      
+      setRfps(mapped)
+      setStats({
+        approved: statsData.approved,
+        rejected: statsData.rejected,
+        onHold: statsData.on_hold,
+        total: statsData.total
+      })
+    } catch(err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const filteredRFPs = MOCK_RFPS.filter(rfp => {
-    const matchesFilter = filter === 'all' || rfp.status === filter
-    const matchesSearch = rfp.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         rfp.client.toLowerCase().includes(searchQuery.toLowerCase())
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  const filteredRFPs = rfps.filter(rfp => {
+    let matchesFilter = filter === 'all' || rfp.status === filter
+    
+    // Smart overrides for combined statuses
+    if (filter === 'approved') {
+      matchesFilter = rfp.status === 'approved' || rfp.status === 'assigned_to_sa'
+    } else if (filter === 'on_hold' || filter === 'on-hold') {
+      matchesFilter = rfp.status === 'on_hold' || rfp.status === 'on-hold'
+    }
+    
+    const matchesSearch = rfp.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                         rfp.client_name?.toLowerCase().includes(searchQuery.toLowerCase())
     return matchesFilter && matchesSearch
   })
 
@@ -98,24 +142,24 @@ export default function ApprovalsPage() {
               filter === item.id ? `ring-2 ring-zinc-900 shadow-sm bg-zinc-50` : "bg-white"
             )}
           >
-            <CardContent className="p-6">
+            <CardContent className="p-4 md:p-6">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-zinc-500 mb-1">{item.label}</p>
-                  <h3 className="text-3xl font-black text-zinc-900">{item.count}</h3>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1">{item.label}</p>
+                  <h3 className="text-2xl md:text-3xl font-black text-zinc-900">{item.count}</h3>
                 </div>
                 <div className={cn(
-                  "p-2.5 rounded-xl",
+                  "p-2 md:p-2.5 rounded-xl",
                   item.color === 'emerald' ? "bg-emerald-50 text-emerald-600" :
                   item.color === 'amber' ? "bg-amber-50 text-amber-600" :
                   item.color === 'rose' ? "bg-rose-50 text-rose-600" : "bg-zinc-100 text-zinc-600"
                 )}>
-                  <item.icon className="w-5 h-5" />
+                  <item.icon className="w-4 h-4 md:w-5 md:h-5" />
                 </div>
               </div>
-              <div className="mt-4 flex items-center text-[10px] font-bold text-zinc-400 gap-1 uppercase tracking-tighter">
+              <div className="mt-4 flex items-center text-[9px] font-bold text-zinc-400 gap-1 uppercase tracking-tighter group transition-colors hover:text-zinc-900">
                 <span>View all {item.label.toLowerCase()}</span>
-                <ArrowUpRight className="w-3 h-3" />
+                <ArrowUpRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
               </div>
             </CardContent>
           </Card>
@@ -149,17 +193,17 @@ export default function ApprovalsPage() {
               {filteredRFPs.length > 0 ? filteredRFPs.map((rfp) => (
                 <tr key={rfp.id} className="hover:bg-zinc-50/50 transition-colors group">
                   <td className="px-6 py-4">
-                    <div>
+                    <div onClick={() => router.push(`/dashboard/ceo/rfp/${rfp.id}`)} className="cursor-pointer">
                       <p className="text-sm font-bold text-zinc-900 group-hover:text-blue-600 transition-colors">{rfp.title}</p>
-                      <p className="text-xs text-zinc-500 font-medium">ID: {rfp.id}</p>
+                      <p className="text-[10px] text-zinc-500 font-medium uppercase tracking-tight">ID: RFP-{rfp.id}</p>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
-                    <p className="text-sm font-semibold text-zinc-700">{rfp.client}</p>
+                  <td className="px-6 py-4 hidden lg:table-cell">
+                    <p className="text-sm font-semibold text-zinc-700">{rfp.client_name || 'Unknown'}</p>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-4 hidden md:table-cell">
                     <div className="flex items-center gap-1.5 text-sm font-bold text-zinc-900">
-                      <DollarSign className="w-3.5 h-3.5 text-zinc-400" />
+                      <span className="text-zinc-400 font-normal">₹</span>
                       {rfp.value}
                     </div>
                   </td>

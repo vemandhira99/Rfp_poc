@@ -1,10 +1,32 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from datetime import datetime
 from app.core.database import get_db
 from app.api.routes.auth import get_current_user
 from app.services.ai_service import generate_summary, generate_architect_draft
 
 router = APIRouter(prefix="/ai", tags=["AI"])
+
+@router.get("/quota-status")
+def get_quota_status(db: Session = Depends(get_db)):
+    from app.models.quota import QuotaUsage
+    today = datetime.now().strftime("%Y-%m-%d")
+    quota = db.query(QuotaUsage).filter(QuotaUsage.day == today).first()
+    
+    if not quota:
+        return {"request_count": 0, "is_exhausted": False, "health": "Good"}
+    
+    health = "Good"
+    if quota.is_exhausted:
+        health = "Critical"
+    elif quota.request_count > 50:
+        health = "Warning"
+        
+    return {
+        "request_count": quota.request_count,
+        "is_exhausted": quota.is_exhausted,
+        "health": health
+    }
 
 @router.post("/rfp/{rfp_id}/summary")
 def get_ai_summary(rfp_id: int, db: Session = Depends(get_db),

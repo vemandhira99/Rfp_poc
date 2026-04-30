@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.api.routes.auth import get_current_user
@@ -6,6 +7,7 @@ from app.services import rfp_service
 from app.schemas.rfp import RFPOut, DecisionRequest, AssignRequest, CommentRequest, DashboardSummary, ChatRequest, DraftRequest, RequirementOut, NotificationOut
 from datetime import datetime
 from typing import List
+from app.models.rfp import RFPDocument, RFPDraft, AuditLog
 
 router = APIRouter(prefix="/rfps", tags=["RFPs"])
 
@@ -32,6 +34,12 @@ def mark_notification_read(notification_id: int, db: Session = Depends(get_db), 
     notification_service.mark_as_read(db, notification_id)
     return {"message": "Notification marked as read"}
 
+@router.post("/notifications/clear-all")
+def clear_all_notifications(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    from app.services import notification_service
+    notification_service.clear_all(db, current_user.id)
+    return {"message": "All notifications marked as read"}
+
 @router.get("/{rfp_id}", response_model=RFPOut)
 def get_rfp(rfp_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     rfp = rfp_service.get_rfp_by_id(db, rfp_id)
@@ -42,7 +50,7 @@ def get_rfp(rfp_id: int, db: Session = Depends(get_db), current_user=Depends(get
 @router.post("/{rfp_id}/decision")
 def make_decision(rfp_id: int, request: DecisionRequest,
                   db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    if current_user.role not in ["CEO", "Admin"]:
+    if current_user.role not in ["CEO", "Admin", "PM", "Leadership"]:
         raise HTTPException(status_code=403, detail="Not authorized")
     result = rfp_service.save_decision(db, rfp_id, current_user.id, request.decision, request.reason)
     return {"message": f"Decision '{request.decision}' saved", "rfp_id": rfp_id}
@@ -50,7 +58,6 @@ def make_decision(rfp_id: int, request: DecisionRequest,
 def background_draft_and_compliance(rfp_id: int):
     from app.core.database import SessionLocal
     from app.services.ai_service import generate_architect_draft, extract_compliance_matrix
-    from app.models.rfp import RFPDocument
     db = SessionLocal()
     try:
         rfp = db.query(RFPDocument).filter(RFPDocument.id == rfp_id).first()
@@ -59,12 +66,20 @@ def background_draft_and_compliance(rfp_id: int):
             db.commit()
 
         # 1. Generate Draft
-        generate_architect_draft(db, rfp_id)
+        result = generate_architect_draft(db, rfp_id)
+        
+        # If cancelled, stop the whole process
+        if isinstance(result, dict) and result.get("status") == "cancelled":
+            print(f"Background task for RFP {rfp_id} stopped due to cancellation.")
+            return
+
         # 2. Extract Compliance Matrix
         extract_compliance_matrix(db, rfp_id)
 
-        if rfp:
-            rfp.current_status = "assigned_to_sa" # Keep it assigned so SA knows they need to work on it
+        # Final refresh to check if user cancelled during compliance extraction
+        db.refresh(rfp)
+        if rfp.current_status == "in_drafting":
+            rfp.current_status = "assigned_to_sa"
             db.commit()
     except Exception as e:
         print(f"Background draft/compliance failed for RFP {rfp_id}: {str(e)}")
@@ -81,8 +96,6 @@ def assign_architect(rfp_id: int, request: AssignRequest, background_tasks: Back
     # Trigger background drafting
     background_tasks.add_task(background_draft_and_compliance, rfp_id)
     
-    return {"message": "Architect assigned and draft generation started", "rfp_id": rfp_id}
-
     return {"message": "Architect assigned and draft generation started", "rfp_id": rfp_id}
 
 @router.post("/{rfp_id}/comment")
@@ -110,20 +123,44 @@ def get_draft(rfp_id: int, db: Session = Depends(get_db), current_user=Depends(g
         raise HTTPException(status_code=404, detail="Draft not found")
     return draft
 
+@router.post("/{rfp_id}/chat-stream")
+def chat_with_rfp_stream(rfp_id: int, request: ChatRequest, db: Session = Depends(get_db)):
+    try:
+        from app.services.ai_service import stream_chat_with_document
+        return StreamingResponse(
+            stream_chat_with_document(
+                db=db, 
+                rfp_id=rfp_id, 
+                message=request.message, 
+                knowledge_mode=request.knowledge_mode,
+                history=request.history
+            ),
+            media_type="text/event-stream"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/{rfp_id}/export")
 def export_rfp(rfp_id: int, db: Session = Depends(get_db)):
     rfp = rfp_service.get_rfp_by_id(db, rfp_id)
     if not rfp:
         raise HTTPException(status_code=404, detail="RFP not found")
     
-    draft = draft_service.get_latest_draft(db, rfp_id)
-    content = draft.draft_content if draft else "# No Draft Available\n\nPlease generate a draft first."
+    # Collect all draft sections for the latest version
+    from sqlalchemy import desc
+    latest_v_record = db.query(RFPDraft).filter(RFPDraft.rfp_id == rfp_id).order_by(desc(RFPDraft.version)).first()
+    if not latest_v_record:
+        content = "# No Draft Available\n\nPlease generate a draft first."
+    else:
+        version = latest_v_record.version
+        drafts = db.query(RFPDraft).filter(RFPDraft.rfp_id == rfp_id, RFPDraft.version == version).order_by(RFPDraft.section_order.asc()).all()
+        content = ""
+        for d in drafts:
+            if d.section_name:
+                content += f"\n\n# {d.section_name}\n\n{d.draft_content or ''}"
     
-    import os
-    import time
-    import re
+    import os, time, re
     from docx import Document
-    from docx.shared import Pt, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from fastapi.responses import FileResponse
     from app.core.config import settings
@@ -134,124 +171,128 @@ def export_rfp(rfp_id: int, db: Session = Depends(get_db)):
     # 1. Professional Title Page
     title_p = doc.add_heading(f"\nRFP Response Draft\n\n{rfp.title}", 0)
     title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    
     subtitle = doc.add_paragraph(f"Client: {rfp.client_name or 'N/A'}")
     subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    
     date_p = doc.add_paragraph(f"Generated Date: {time.strftime('%Y-%m-%d')}")
     date_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    
     doc.add_page_break()
 
-    # 2. Table of Contents (Placeholder Header)
+    # 2. Dynamic Table of Contents
     doc.add_heading("Table of Contents", level=1)
-    doc.add_paragraph("1. Executive Summary")
-    doc.add_paragraph("2. Technical Solution")
-    doc.add_paragraph("3. Compliance Matrix")
-    doc.add_paragraph("... and more (Auto-generated structure)")
+    if latest_v_record:
+        all_sections = db.query(RFPDraft).filter(
+            RFPDraft.rfp_id == rfp_id, 
+            RFPDraft.version == latest_v_record.version,
+            RFPDraft.section_name != None
+        ).order_by(RFPDraft.section_order.asc()).all()
+        for s in all_sections:
+            doc.add_paragraph(f"{s.section_order}. {s.section_name}")
+    else:
+        doc.add_paragraph("1. Executive Summary")
     doc.add_page_break()
 
     # 3. Parse Markdown Content into Word Sections
-    # Simple regex to find headers and paragraphs
     lines = content.split('\n')
     for line in lines:
         line = line.strip()
-        if not line:
-            continue
-            
-        if line.startswith('### '):
-            doc.add_heading(line[4:], level=3)
-        elif line.startswith('## '):
-            doc.add_heading(line[3:], level=2)
-        elif line.startswith('# '):
-            doc.add_heading(line[2:], level=1)
-        elif line.startswith('* '):
-            doc.add_paragraph(line[2:], style='List Bullet')
-        elif line.startswith('- '):
-            doc.add_paragraph(line[2:], style='List Bullet')
-        elif re.match(r'^\d+\.', line):
-            doc.add_paragraph(line, style='List Number')
-        else:
-            doc.add_paragraph(line)
+        if not line: continue
+        if line.startswith('### '): doc.add_heading(line[4:], level=3)
+        elif line.startswith('## '): doc.add_heading(line[3:], level=2)
+        elif line.startswith('# '): doc.add_heading(line[2:], level=1)
+        elif line.startswith('* '): doc.add_paragraph(line[2:], style='List Bullet')
+        elif line.startswith('- '): doc.add_paragraph(line[2:], style='List Bullet')
+        elif re.match(r'^\d+\.', line): doc.add_paragraph(line, style='List Number')
+        else: doc.add_paragraph(line)
 
     doc.add_page_break()
 
     # 4. Compliance Matrix Section
     doc.add_heading("Annexure: Compliance Matrix", level=1)
-    doc.add_paragraph("The following table details our compliance with the specific requirements identified in the RFP document.")
-
     requirements = db.query(RFPRequirement).filter(RFPRequirement.rfp_id == rfp_id).all()
     if requirements:
         table = doc.add_table(rows=1, cols=4)
         table.style = 'Table Grid'
         hdr_cells = table.rows[0].cells
-        hdr_cells[0].text = 'Category'
-        hdr_cells[1].text = 'Requirement'
-        hdr_cells[2].text = 'Status'
-        hdr_cells[3].text = 'Response Strategy'
-        
-        # Style headers
+        hdr_cells[0].text = 'Category'; hdr_cells[1].text = 'Requirement'; hdr_cells[2].text = 'Status'; hdr_cells[3].text = 'Response Strategy'
         for cell in hdr_cells:
-            for paragraph in cell.paragraphs:
-                for run in paragraph.runs:
-                    run.bold = True
-
+            for p in cell.paragraphs:
+                for r in p.runs: r.bold = True
         for req in requirements:
             row_cells = table.add_row().cells
             row_cells[0].text = str(req.category or "General")
             row_cells[1].text = str(req.requirement_text)
             row_cells[2].text = str(req.status or "Pending")
             row_cells[3].text = str(req.response_strategy or "N/A")
-    else:
-        doc.add_paragraph("No compliance requirements found for this RFP. Please run compliance extraction first.")
-
+    
     # 5. Save and Export
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     safe_title = re.sub(r'[^\w\s-]', '', rfp.title).replace(' ', '_')
     file_name = f"Response_Draft_{safe_title}_{int(time.time())}.docx"
     file_path = os.path.join(settings.UPLOAD_DIR, file_name)
     doc.save(file_path)
-    
     return FileResponse(file_path, filename=file_name)
 
 import json
-from app.models.rfp import AuditLog
-from app.services.ai_service import get_rfp_text, chat_with_document
-# Unused import removed
-from app.core.config import settings
+from app.services.ai_service import chat_with_document
 
 @router.get("/{rfp_id}/summary")
 def get_ai_summary(rfp_id: int, db: Session = Depends(get_db)):
-    log = db.query(AuditLog).filter(
-        AuditLog.rfp_id == rfp_id,
-        AuditLog.action == "ai_summary_generated"
-    ).order_by(AuditLog.created_at.desc()).first()
-    
-    if not log or not log.new_value:
-        return {"error": "Summary not found"}
-        
-    try:
-        return json.loads(log.new_value)
-    except:
-        return {"error": "Invalid summary format"}
+    log = db.query(AuditLog).filter(AuditLog.rfp_id == rfp_id, AuditLog.action == "ai_summary_generated").order_by(AuditLog.created_at.desc()).first()
+    if not log or not log.new_value: return {"error": "Summary not found"}
+    try: return json.loads(log.new_value)
+    except: return {"error": "Invalid summary format"}
 
 @router.post("/{rfp_id}/chat")
 def chat_with_rfp(rfp_id: int, request: ChatRequest, db: Session = Depends(get_db)):
     try:
-        reply = chat_with_document(
-            db=db, 
-            rfp_id=rfp_id, 
-            message=request.message, 
-            knowledge_mode=request.knowledge_mode
-        )
+        reply = chat_with_document(db=db, rfp_id=rfp_id, message=request.message, knowledge_mode=request.knowledge_mode, history=request.history)
         return {"reply": reply}
     except Exception as e:
-        # Fallback error message if service fails unexpectedly
         return {"reply": f"AI Advisor is currently unavailable. ({str(e)})"}
-
 
 @router.get("/{rfp_id}/compliance", response_model=List[RequirementOut])
 def get_compliance_matrix(rfp_id: int, db: Session = Depends(get_db)):
     from app.models.rfp import RFPRequirement
-    items = db.query(RFPRequirement).filter(RFPRequirement.rfp_id == rfp_id).all()
-    return items
+    return db.query(RFPRequirement).filter(RFPRequirement.rfp_id == rfp_id).all()
+
+@router.post("/{rfp_id}/regenerate")
+def regenerate_proposal(rfp_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    # Reset status to in_drafting to start the loop
+    from app.services import rfp_service
+    rfp_service.update_rfp_status(db, rfp_id, "in_drafting", current_user.id)
+    background_tasks.add_task(background_draft_and_compliance, rfp_id)
+    return {"message": "Regeneration started", "status": "processing"}
+
+@router.post("/{rfp_id}/cancel-generation")
+def cancel_generation(rfp_id: int, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    from app.services import rfp_service
+    # Setting status to 'on_hold' will trigger the loop in ai_service to exit
+    rfp_service.update_rfp_status(db, rfp_id, "on_hold", current_user.id)
+    return {"message": "Generation cancellation requested", "status": "cancelling"}
+
+@router.get("/{rfp_id}/generation-progress")
+def get_generation_progress(rfp_id: int, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    from sqlalchemy import desc
+    latest_v_record = db.query(RFPDraft).filter(RFPDraft.rfp_id == rfp_id).order_by(desc(RFPDraft.version)).first()
+    
+    # If no record at all, it hasn't started
+    if not latest_v_record: return {"current": 0, "total": 21, "status": "starting"}
+    
+    latest_version = latest_v_record.version
+    count = db.query(RFPDraft).filter(RFPDraft.rfp_id == rfp_id, RFPDraft.version == latest_version, RFPDraft.section_name != None).count()
+    
+    # Check RFP document for current status (to handle manual stops/cancellations)
+    rfp = db.query(RFPDocument).filter(RFPDocument.id == rfp_id).first()
+    current_status = rfp.current_status if rfp else "unknown"
+    
+    # Determine progress status
+    if count >= 21:
+        status = "completed"
+    elif current_status == "on_hold":
+        status = "cancelled"
+    elif current_status == "error" or current_status == "rate_limit_error":
+        status = "failed"
+    else:
+        status = "processing"
+        
+    return {"current": count, "total": 21, "version": latest_version, "status": status}

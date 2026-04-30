@@ -15,7 +15,8 @@ import {
   Send,
   UserPlus,
   Ban,
-  Pause
+  Pause,
+  CheckCircle2
 } from 'lucide-react'
 import { MOCK_RFPS, RFP } from '@/lib/mocks/rfpData'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -25,6 +26,8 @@ import { Progress } from '@/components/ui/progress'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 export default function RfpReviewPage() {
   const params = useParams()
@@ -38,6 +41,12 @@ export default function RfpReviewPage() {
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false)
   const [selectedArchitect, setSelectedArchitect] = useState('')
   const [isAssigning, setIsAssigning] = useState(false)
+
+  // Decision State
+  const [isDecisionModalOpen, setIsDecisionModalOpen] = useState(false)
+  const [pendingDecision, setPendingDecision] = useState<'approved' | 'rejected' | 'on_hold' | 'proceed' | null>(null)
+  const [decisionReason, setDecisionReason] = useState('')
+  const [isSubmittingDecision, setIsSubmittingDecision] = useState(false)
 
   const [chatInput, setChatInput] = useState('')
   const [knowledgeMode, setKnowledgeMode] = useState('Hybrid') // 'RFP-Only' | 'Global' | 'Hybrid'
@@ -119,21 +128,86 @@ export default function RfpReviewPage() {
     setIsChatLoading(true)
 
     try {
-        const { fetchApi } = await import('@/lib/api')
-        const data = await fetchApi(`/rfps/${params.id}/chat`, {
+        const { API_BASE_URL } = await import('@/lib/api')
+        const token = localStorage.getItem('rfp_token')
+        
+        const response = await fetch(`${API_BASE_URL}/rfps/${params.id}/chat-stream`, {
             method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            },
             body: JSON.stringify({
                 message: msg,
-                knowledge_mode: knowledgeMode
+                knowledge_mode: knowledgeMode,
+                history: messages.slice(-10)
             })
         })
-        setMessages(prev => [...prev, { role: 'ai', text: data.reply || 'Sorry, I failed to generate a response.' }])
+
+        if (!response.ok) throw new Error('Failed to connect')
+        
+        const reader = response.body?.getReader()
+        if (!reader) throw new Error('No reader')
+
+        // Add an empty AI message to start streaming into
+        setMessages(prev => [...prev, { role: 'ai', text: '' }])
+        
+        let accumulatedText = ''
+        const decoder = new TextDecoder()
+        
+        while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            
+            const chunk = decoder.decode(value, { stream: true })
+            accumulatedText += chunk
+            
+            // Update the LAST message (the one we just added)
+            setMessages(prev => {
+                const newMessages = [...prev]
+                newMessages[newMessages.length - 1] = { 
+                    role: 'ai', 
+                    text: accumulatedText 
+                }
+                return newMessages
+            })
+        }
     } catch(e) {
         setMessages(prev => [...prev, { role: 'ai', text: 'Error connecting to the AI Advisor. Please try again.' }])
     } finally {
         setIsChatLoading(false)
     }
   }
+  const isDecided = rfp?.status === 'approved' || rfp?.status === 'rejected' || rfp?.status === 'on_hold' || rfp?.status === 'assigned_to_sa'
+
+  const handleDecision = async () => {
+    if (!pendingDecision || isSubmittingDecision) return
+    setIsSubmittingDecision(true)
+    try {
+      const { fetchApi } = await import('@/lib/api')
+      await fetchApi(`/rfps/${params.id}/decision`, {
+        method: 'POST',
+        body: JSON.stringify({ 
+          decision: pendingDecision, 
+          reason: decisionReason 
+        })
+      })
+      
+      // Update local state
+      setRfp((prev: any) => ({ ...prev, status: pendingDecision }))
+      setIsDecisionModalOpen(false)
+      setPendingDecision(null)
+      setDecisionReason('')
+      
+      // If approved or proceed, maybe we want to trigger something else?
+      // The backend already updates the status.
+    } catch (e) {
+      console.error("Failed to submit decision", e)
+    } finally {
+      setIsSubmittingDecision(false)
+    }
+  }
+
   const handleAssignArchitect = async () => {
     if (!selectedArchitect || isAssigning) return
     setIsAssigning(true)
@@ -151,6 +225,11 @@ export default function RfpReviewPage() {
     } finally {
       setIsAssigning(false)
     }
+  }
+
+  const openDecisionModal = (decision: 'approved' | 'rejected' | 'on_hold' | 'proceed') => {
+    setPendingDecision(decision)
+    setIsDecisionModalOpen(true)
   }
 
   return (
@@ -171,21 +250,54 @@ export default function RfpReviewPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" className="h-11 px-5 rounded-xl border-zinc-200 font-bold gap-2 text-zinc-600">
+          {isDecided && (
+            <Badge className="h-11 px-4 rounded-xl bg-zinc-900 text-white font-bold animate-in slide-in-from-right-4">
+              Status Locked: {rfp.status.replace(/[-_]/g, ' ').toUpperCase()}
+            </Badge>
+          )}
+          <Button 
+            variant="outline" 
+            onClick={() => openDecisionModal('on_hold')}
+            disabled={isDecided}
+            className={cn(
+              "h-11 px-5 rounded-xl border-zinc-200 font-bold gap-2 text-zinc-600 hover:bg-zinc-50",
+              isDecided && "opacity-50 grayscale cursor-not-allowed"
+            )}
+          >
             <Pause className="w-4 h-4" />
             Hold
           </Button>
-          <Button variant="outline" className="h-11 px-5 rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 font-bold gap-2">
+          <Button 
+            variant="outline" 
+            onClick={() => openDecisionModal('rejected')}
+            disabled={isDecided}
+            className={cn(
+              "h-11 px-5 rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 font-bold gap-2",
+              isDecided && "opacity-50 grayscale cursor-not-allowed"
+            )}
+          >
             <Ban className="w-4 h-4" />
             Reject
           </Button>
           <Button 
+            onClick={() => openDecisionModal('approved')}
+            disabled={isDecided}
+            className={cn(
+              "h-11 px-8 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 shadow-lg shadow-emerald-100",
+              isDecided && "opacity-50 grayscale cursor-not-allowed shadow-none"
+            )}
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            Approve RFP
+          </Button>
+          <div className="w-px h-8 bg-zinc-200 mx-1" />
+          <Button 
             onClick={() => setIsAssignModalOpen(true)}
-            disabled={rfp.status === 'assigned_to_sa'}
+            disabled={rfp.status === 'assigned_to_sa' || rfp.status === 'rejected' || rfp.status === 'on_hold'}
             className="h-11 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 shadow-lg shadow-blue-100"
           >
             <UserPlus className="w-4 h-4" />
-            {rfp.status === 'assigned_to_sa' ? 'Assigned' : 'Assign Solution Architect'}
+            {rfp.status === 'assigned_to_sa' ? 'Assigned' : 'Assign Architect'}
           </Button>
         </div>
       </div>
@@ -418,7 +530,33 @@ export default function RfpReviewPage() {
                         ? "bg-white border border-zinc-100 text-zinc-700 rounded-2xl rounded-tl-none shadow-[2px_2px_10px_rgba(0,0,0,0.02)]" 
                         : "bg-zinc-900 text-white rounded-2xl rounded-tr-none shadow-xl shadow-zinc-200"
                     )}>
-                      {msg.text}
+                      {msg.role === 'ai' ? (
+                        <ReactMarkdown 
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            h1: ({node, ...props}) => <h1 className="text-xl font-black mb-4 mt-2 text-zinc-900 border-b border-zinc-100 pb-2" {...props} />,
+                            h2: ({node, ...props}) => <h2 className="text-lg font-bold mb-3 mt-4 text-zinc-900" {...props} />,
+                            h3: ({node, ...props}) => <h3 className="text-base font-bold mb-2 mt-3 text-zinc-800" {...props} />,
+                            p: ({node, ...props}) => <p className="mb-4 last:mb-0 leading-relaxed text-zinc-700" {...props} />,
+                            ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-4 space-y-2 text-zinc-700" {...props} />,
+                            ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-4 space-y-2 text-zinc-700" {...props} />,
+                            li: ({node, ...props}) => <li className="leading-relaxed pl-1" {...props} />,
+                            strong: ({node, ...props}) => <strong className="font-bold text-zinc-900 bg-zinc-50 px-1 rounded" {...props} />,
+                            hr: ({node, ...props}) => <hr className="my-6 border-zinc-100" {...props} />,
+                            table: ({node, ...props}) => (
+                              <div className="overflow-x-auto my-4 rounded-xl border border-zinc-100">
+                                <table className="w-full text-xs text-left" {...props} />
+                              </div>
+                            ),
+                            th: ({node, ...props}) => <th className="bg-zinc-50 p-2 font-bold border-b border-zinc-100" {...props} />,
+                            td: ({node, ...props}) => <td className="p-2 border-b border-zinc-50" {...props} />,
+                          }}
+                        >
+                          {msg.text}
+                        </ReactMarkdown>
+                      ) : (
+                        msg.text
+                      )}
                     </div>
                     {msg.role === 'ai' && i === 0 && (
                       <div className="flex items-center gap-1 ml-1">
@@ -484,26 +622,74 @@ export default function RfpReviewPage() {
       </div>
 
       <Dialog open={isAssignModalOpen} onOpenChange={setIsAssignModalOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[425px] rounded-3xl">
           <DialogHeader>
-            <DialogTitle>Assign Solution Architect</DialogTitle>
+            <DialogTitle className="text-2xl font-black text-zinc-900">Assign Architect</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
+          <div className="grid gap-4 py-6">
+            <p className="text-sm text-zinc-500 font-medium">Select a Solution Architect to lead the technical response for this RFP.</p>
             <Select onValueChange={setSelectedArchitect} value={selectedArchitect}>
-              <SelectTrigger>
+              <SelectTrigger className="h-12 rounded-xl border-zinc-200 focus:ring-zinc-900/5">
                 <SelectValue placeholder="Select an architect" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="rounded-xl border-zinc-200">
                 {architects.map(a => (
-                  <SelectItem key={a.id} value={a.id.toString()}>{a.name}</SelectItem>
+                  <SelectItem key={a.id} value={a.id.toString()} className="focus:bg-zinc-50 rounded-lg py-3">
+                    <div className="flex flex-col">
+                      <span className="font-bold text-zinc-900">{a.name}</span>
+                      <span className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold">Solution Architect</span>
+                    </div>
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAssignModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleAssignArchitect} disabled={!selectedArchitect || isAssigning}>
-              {isAssigning ? 'Assigning...' : 'Assign'}
+          <DialogFooter className="gap-3">
+            <Button variant="ghost" onClick={() => setIsAssignModalOpen(false)} className="rounded-xl font-bold">Cancel</Button>
+            <Button 
+              onClick={handleAssignArchitect} 
+              disabled={!selectedArchitect || isAssigning}
+              className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-8 font-bold shadow-lg shadow-blue-100"
+            >
+              {isAssigning ? 'Assigning...' : 'Confirm Assignment'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isDecisionModalOpen} onOpenChange={setIsDecisionModalOpen}>
+        <DialogContent className="sm:max-w-[425px] rounded-3xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black text-zinc-900">
+              {pendingDecision === 'approved' ? 'Approve RFP' : 
+               pendingDecision === 'rejected' ? 'Reject RFP' : 
+               pendingDecision === 'on_hold' ? 'Put on Hold' : 'Submit Decision'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-6">
+            <p className="text-sm text-zinc-500 font-medium">
+              Are you sure you want to {pendingDecision?.replace('_', ' ')} this RFP? Please provide a brief reason for your records.
+            </p>
+            <textarea 
+              value={decisionReason}
+              onChange={(e) => setDecisionReason(e.target.value)}
+              placeholder="Enter reason or comments..."
+              className="w-full min-h-[100px] p-4 text-sm font-medium border border-zinc-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-zinc-900/5 focus:border-zinc-300 transition-all resize-none bg-zinc-50"
+            />
+          </div>
+          <DialogFooter className="gap-3">
+            <Button variant="ghost" onClick={() => setIsDecisionModalOpen(false)} className="rounded-xl font-bold">Cancel</Button>
+            <Button 
+              onClick={handleDecision} 
+              disabled={isSubmittingDecision}
+              className={cn(
+                "rounded-xl px-8 font-bold text-white shadow-lg",
+                pendingDecision === 'approved' ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100" :
+                pendingDecision === 'rejected' ? "bg-rose-600 hover:bg-rose-700 shadow-rose-100" :
+                "bg-zinc-900 hover:bg-zinc-800 shadow-zinc-200"
+              )}
+            >
+              {isSubmittingDecision ? 'Submitting...' : 'Confirm Decision'}
             </Button>
           </DialogFooter>
         </DialogContent>

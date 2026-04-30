@@ -14,6 +14,7 @@ class RFPDocument(Base):
     file_size_kb   = Column(Integer)
     current_status = Column(String(50), default="uploaded")
     gemini_file_uri= Column(String(500), nullable=True)
+    gemini_cache_name = Column(String(500), nullable=True)
     summary_json   = Column(Text, nullable=True)
     created_at     = Column(DateTime, default=func.now())
     updated_at     = Column(DateTime, default=func.now(), onupdate=func.now())
@@ -80,6 +81,8 @@ class RFPDraft(Base):
     __tablename__ = "rfp_drafts"
     id            = Column(Integer, primary_key=True, index=True)
     rfp_id        = Column(Integer, ForeignKey("rfp_documents.id"))
+    section_name  = Column(String(200), nullable=True) # e.g., "Executive Summary"
+    section_order = Column(Integer, default=1)
     version       = Column(Integer, default=1)
     draft_content = Column(Text, nullable=False)
     created_by    = Column(Integer, ForeignKey("users.id"))

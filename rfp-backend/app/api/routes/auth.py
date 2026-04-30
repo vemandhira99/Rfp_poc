@@ -40,7 +40,7 @@ from typing import List
 @router.get("/users/architects", response_model=List[UserOut])
 def get_architects(db: Session = Depends(get_db), current_user = Depends(get_current_user)):
     from app.models.user import User
-    return db.query(User).filter(User.role == "Solution_Architect").all()
+    return db.query(User).filter(User.role.in_(["Solution_Architect", "SA"])).all()
 
 @router.post("/register", response_model=UserOut)
 def register(data: UserCreate, db: Session = Depends(get_db)):

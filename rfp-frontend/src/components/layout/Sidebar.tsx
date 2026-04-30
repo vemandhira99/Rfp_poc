@@ -10,7 +10,8 @@ import {
   Briefcase, 
   FileEdit,
   FolderOpen,
-  PanelLeftClose
+  PanelLeftClose,
+  Activity
 } from 'lucide-react'
 import { User } from '@/lib/mocks/rfpData'
 
@@ -89,8 +90,10 @@ export function Sidebar({ onToggle }: { onToggle?: () => void }) {
           )
         })}
       </nav>
+
+      <QuotaIndicator />
       
-      <div className="w-full mt-auto px-2">
+      <div className="w-full mt-6 px-2">
       <button
         onClick={() => {
           localStorage.removeItem('rfp_user')
@@ -100,6 +103,56 @@ export function Sidebar({ onToggle }: { onToggle?: () => void }) {
       >
         Sign Out
       </button>
+      </div>
+    </div>
+  )
+}
+
+function QuotaIndicator() {
+  const [quota, setQuota] = useState<{request_count: number, is_exhausted: boolean, health: string} | null>(null)
+
+  useEffect(() => {
+    async function fetchQuota() {
+      try {
+        const { fetchApi } = await import('@/lib/api')
+        const data = await fetchApi('/ai/quota-status')
+        setQuota(data)
+      } catch (e) {
+        console.error("Failed to fetch quota", e)
+      }
+    }
+    fetchQuota()
+    const interval = setInterval(fetchQuota, 30000) // Every 30s
+    return () => clearInterval(interval)
+  }, [])
+
+  if (!quota) return null
+
+  return (
+    <div className="w-full px-2 mt-4">
+      <div className="p-3 rounded-xl border border-zinc-100 bg-zinc-50/50">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-1.5">
+            <Activity className="w-3 h-3 text-zinc-400" />
+            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Quota Health</span>
+          </div>
+          <span className={`text-[10px] font-black uppercase ${quota.health === 'Good' ? 'text-emerald-600' : quota.health === 'Warning' ? 'text-amber-600' : 'text-rose-600'}`}>
+            {quota.health}
+          </span>
+        </div>
+        
+        <div className="space-y-1.5">
+          <div className="w-full bg-zinc-200 h-1.5 rounded-full overflow-hidden">
+            <div 
+              className={`h-full transition-all duration-500 ${quota.health === 'Good' ? 'bg-emerald-500' : quota.health === 'Warning' ? 'bg-amber-500' : 'bg-rose-500'}`}
+              style={{ width: `${Math.min((quota.request_count / 100) * 100, 100)}%` }}
+            />
+          </div>
+          <div className="flex justify-between text-[9px] font-bold text-zinc-500">
+            <span>{quota.request_count} requests</span>
+            <span>Limit: 100/day</span>
+          </div>
+        </div>
       </div>
     </div>
   )

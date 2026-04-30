@@ -1,28 +1,98 @@
 from google import genai
 import json
+import os
 from sqlalchemy.orm import Session
 from app.core.config import settings
-from app.models.rfp import RFPDocument, AuditLog, RFPMetadata
+from app.models.rfp import RFPDocument, AuditLog, RFPMetadata, RFPDraft
 from app.models.sections import RFPSection
 from app.services.notification_service import create_notification
 import re
 import time
+from datetime import datetime
 
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-def call_gemini_with_retry(content, max_retries=5):
+def ensure_gemini_file(db: Session, rfp: RFPDocument):
+    """
+    Ensures a valid Gemini File reference exists. Re-uploads if the URI is invalid or 
+    belongs to a different API key/project.
+    """
+    file_ref = None
+    if rfp.gemini_file_uri:
+        try:
+            file_ref = client.files.get(name=rfp.gemini_file_uri)
+        except Exception as e:
+            print(f"Gemini File URI invalid or from different project for RFP {rfp.id}: {str(e)}. Re-uploading...")
+            file_ref = None
+
+    if not file_ref:
+        if rfp.file_path and os.path.exists(rfp.file_path):
+            try:
+                print(f"Uploading file for RFP {rfp.id}: {rfp.file_path}")
+                file_ref = client.files.upload(file=rfp.file_path, config={'display_name': rfp.file_name})
+                
+                # Wait for file to be active
+                for _ in range(12): # Wait up to 60s
+                    file_ref = client.files.get(name=file_ref.name)
+                    if file_ref.state.name == "ACTIVE":
+                        break
+                    time.sleep(5)
+                
+                rfp.gemini_file_uri = file_ref.name
+                db.commit()
+            except Exception as ue:
+                print(f"Error uploading file for RFP {rfp.id}: {str(ue)}")
+                return None
+        else:
+            return None
+    return file_ref
+
+def get_or_create_cache(db: Session, rfp_id: int):
+    """
+    Helper to manage Context Caching. 
+    NOTE: Disabled for Free Tier due to 0-token storage limit.
+    """
+    return None
+
+def track_quota_usage(db, is_error=False, error_msg=""):
+    from app.models.quota import QuotaUsage
+    today = datetime.now().strftime("%Y-%m-%d")
+    
+    quota = db.query(QuotaUsage).filter(QuotaUsage.day == today).first()
+    if not quota:
+        quota = QuotaUsage(day=today, request_count=0)
+        db.add(quota)
+    
+    quota.request_count += 1
+    if is_error:
+        error_msg_lower = error_msg.lower()
+        if "429" in error_msg_lower or "quota" in error_msg_lower:
+            quota.is_exhausted = True
+        elif "503" in error_msg_lower or "unavailable" in error_msg_lower:
+            # Mark as high demand but not necessarily exhausted for the day
+            print(f"Server Busy (503): {error_msg}")
+    
+    db.commit()
+
+def call_gemini_with_retry(content, model="gemini-2.5-flash", config=None, max_retries=5):
     for i in range(max_retries):
         try:
+            # Use provided config or default to empty dict
+            gen_config = config if config else {}
+            
             return client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=content
+                model=model,
+                contents=content,
+                config=gen_config
             )
         except Exception as e:
             error_str = str(e).lower()
-            if "429" in error_str or "quota" in error_str:
+            # Handle both Rate Limits (429) and Temporary Server Overload (503)
+            if any(code in error_str for code in ["429", "503", "quota", "unavailable", "overloaded"]):
                 if i < max_retries - 1:
-                    wait_time = (i + 1) * 20
-                    print(f"Quota reached. Retrying in {wait_time}s... (Attempt {i+1})")
+                    # Exponential backoff: 5s, 10s, 15s...
+                    wait_time = (i + 1) * 5 
+                    print(f"Server busy or Rate limit reached. Retrying in {wait_time}s... (Attempt {i+1})")
                     time.sleep(wait_time)
                     continue
             raise e
@@ -46,6 +116,18 @@ def generate_summary(db: Session, rfp_id: int) -> dict:
     rfp = db.query(RFPDocument).filter(RFPDocument.id == rfp_id).first()
     if not rfp:
         return {"error": "RFP not found"}
+
+    # Optimization: Skip if summary already exists
+    if rfp.summary_json:
+        print(f"Summary already exists for RFP {rfp_id}. Skipping regeneration.")
+        try:
+            return {
+                "rfp_id": rfp_id,
+                "status": "summary_generated",
+                "summary": json.loads(rfp.summary_json)
+            }
+        except:
+            pass # If JSON is corrupt, re-generate
 
     if not rfp.gemini_file_uri:
         return {"error": "No Gemini File URI found. Please upload natively first."}
@@ -80,20 +162,27 @@ Return ONLY this JSON structure, no other text:
 }}
 """
 
+    # Optimization: Context Caching disabled for Free Tier stability
+    # try:
+    #     cache = get_or_create_cache(db, rfp_id)
+    #     if cache:
+    #         response = call_gemini_with_retry(
+    #             content=prompt,
+    #             config={"cached_content": cache.name}
+    #         )
+    #     else:
+    #         file = client.files.get(name=rfp.gemini_file_uri)
+    #         response = call_gemini_with_retry([file, prompt])
+    # except:
+    #     file = client.files.get(name=rfp.gemini_file_uri)
+    #     response = call_gemini_with_retry([file, prompt])
+
     try:
-        # Try native file ingestion first
-        try:
-            # New SDK way to get file
-            file = client.files.get(name=rfp.gemini_file_uri)
-            response = call_gemini_with_retry([file, prompt])
-        except Exception as native_err:
-            print(f"Native ingestion failed or quota hit: {str(native_err)}. Falling back to text-based analysis.")
-            # Fallback: Extract text and send
-            text_context = get_rfp_text(db, rfp_id)
-            if not text_context or len(text_context) < 100:
-                raise Exception(f"Native ingestion failed and no text sections found in DB. Error: {str(native_err)}")
-            
-            response = call_gemini_with_retry([f"Document Text:\n{text_context[:30000]}\n\nTask: {prompt}"])
+        # Standard native ingestion (reliable for Free Tier)
+        file = ensure_gemini_file(db, rfp)
+        if not file:
+             return {"error": "Failed to prepare document for AI."}
+        response = call_gemini_with_retry([file, prompt])
         
         raw_text = response.text.strip()
 
@@ -107,7 +196,7 @@ Return ONLY this JSON structure, no other text:
         result = json.loads(raw_text)
 
         # Update RFP status and cache summary
-        rfp.current_status = "summary_generated"
+        rfp.current_status = "pending-review"
         rfp.summary_json = json.dumps(result)
         
         # Also update RFPMetadata bidding amount if possible
@@ -167,7 +256,7 @@ Return ONLY this JSON structure, no other text:
 
         return {
             "rfp_id": rfp_id,
-            "status": "summary_generated",
+            "status": "pending-review",
             "summary": result
         }
 
@@ -197,95 +286,211 @@ Return ONLY this JSON structure, no other text:
             "error": error_msg
         }
 
+def generate_proposal_section(db: Session, rfp_id: int, section_name: str, section_order: int, user_id: int, version: int = 1):
+    """
+    Generates a deep-dive for a specific section of the proposal.
+    """
+    from app.models.rfp import RFPDraft
+    rfp = db.query(RFPDocument).filter(RFPDocument.id == rfp_id).first()
+    if not rfp:
+        return None
+
+    # THE MASTER PROMPT (Experienced Consultant & Strategic Bid Manager)
+    master_instruction = """
+You are a senior bid manager and experienced management consultant. Your task is to generate a submission-ready, evaluator-grade RFP response that is outcome-driven and strategically superior.
+
+🔴 CORE RULES:
+1. NO INVENTION: Use [TO BE CONFIRMED] if data is missing. Do NOT invent metrics or timelines.
+2. CONSULTANT TONE: Write with the voice of an experienced consultant. Avoid repetitive sentence patterns; ensure smooth transitions and a confident, professional narrative flow.
+3. STRATEGIC STRENGTHS: Consistently reinforce 2-3 key solution strengths (e.g., seamless ERPNext/Akashic integration) throughout the document.
+4. VISUAL READABILITY: Use summary tables, step-by-step sequences, and "text diagrams" to make technical flows scannable.
+5. IMPLEMENTATION CONFIDENCE: Include specific milestone checkpoints and approval gates in all strategy sections.
+6. OWNERSHIP CLARITY: Clearly define ownership in all risks, assumptions, and dependencies.
+7. TONE GRADIENT: Use a highly confident tone for confirmed capabilities and a professional, cautious tone for assumptions.
+8. INTERNAL VALIDATION: Ensure no accidental placeholders remain and there are no internal contradictions.
+
+🟢 REQUIREMENT RESPONSE FORMAT:
+Requirement: [Text]
+Proposed Response: [Text]
+How It Is Supported: [Specific Workflow]
+Key Controls: [Audit/Versioning details]
+Compliance Status: [Compliant/Partial/Non-Compliant]
+"""
+
+    prompt = f"""
+{master_instruction}
+
+### TARGET SECTION TO EXPAND:
+**{section_order}. {section_name}**
+
+Please write the full, detailed content for this section now. Be as exhaustive as possible. Aim for maximum depth.
+Return the response as a raw Markdown string.
+"""
+
+    try:
+        print(f"[{rfp_id}] Starting section: {section_name} (Order: {section_order}, Version: {version})")
+        # Standard file upload (caching disabled for stability)
+        file = ensure_gemini_file(db, rfp)
+        if not file:
+            print(f"[{rfp_id}] Error: Could not retrieve file for {section_name}")
+            return None
+        response = call_gemini_with_retry([file, prompt])
+        
+        print(f"[{rfp_id}] AI Response received for {section_name}")
+        content = response.text.strip()
+        
+        # Save this section to the database
+        draft_section = RFPDraft(
+            rfp_id=rfp_id,
+            section_name=section_name,
+            section_order=section_order,
+            version=version,
+            draft_content=content,
+            created_by=user_id
+        )
+        db.add(draft_section)
+        db.commit()
+        print(f"[{rfp_id}] Section {section_name} saved successfully.")
+        return draft_section
+
+    except Exception as e:
+        db.rollback()
+        print(f"[{rfp_id}] Error generating section {section_name}: {str(e)}")
+        return None
+
 def generate_architect_draft(db: Session, rfp_id: int) -> dict:
     import os
     rfp = db.query(RFPDocument).filter(RFPDocument.id == rfp_id).first()
-    if not rfp or not rfp.gemini_file_uri:
-        return {"error": "RFP or Gemini Context File not found"}
-
-    # Load the "Gold Standard" template
-    template_path = "app/resources/rfp_response_template.txt"
-    template_content = ""
-    if os.path.exists(template_path):
-        with open(template_path, "r", encoding="utf-8") as f:
-            template_content = f.read()
-
-    prompt = f"""
-You are a Senior Solution Architect at DHIRA Software Labs. Your task is to generate a COMPREHENSIVE and PROFESSIONAL RFP Response Draft for the provided document.
-
-### REFERENCE TEMPLATE (Follow this tone, terminology, and 19-section structure):
-{template_content[:4000]} # Limit to 4000 chars to avoid prompt bloat while keeping the core structure
-
-### YOUR INSTRUCTIONS:
-1. Generate a FULL RFP response following the exact 19-section structure seen in the Table of Contents above.
-2. The response MUST be in Markdown format.
-3. Use bold headings (e.g., # 1. Executive Summary, ## 2.1 Functional Requirements).
-4. For technical sections (Architecture, Modules), assume we are proposing a solution based on **ERPNext** (Transactional Layer) and **Akashic Unified Data Platform** (Governance & Analytics Layer).
-5. Be extremely detailed. For functional modules, explain how ERPNext handles Budgeting, HR, etc., specifically for this client's needs.
-6. If the RFP document mentions specific requirements (like "12 receipt systems" or "99% availability"), ensure they are addressed in the response.
-7. Use professional language. Avoid generic filler. 
-
-### STRUCTURE TO FOLLOW:
-1. Executive Summary
-2. Understanding of RFP Requirements (2.1 Functional, 2.2 Non-Functional)
-3. Proposed IFHRMS Solution Overview (3.1 Architecture, 3.2 Modules, 3.3 Akashic, 3.4 Integration, 3.5 Timeline, 3.6 Support)
-4. Detailed Functional Solution Architecture (4.1 to 4.14 for each module)
-5. Integration Architecture
-6. Data Migration Strategy
-7. Implementation Strategy
-8. Project Governance and Resource Deployment
-9. Testing and Quality Assurance Strategy
-10. Training and Change Management
-11. Operations and Maintenance Strategy
-12. Security and Compliance Framework
-13. Service Level Agreements (SLA)
-14. Risk Management and Mitigation Strategy
-15. Conclusion
-16. Annexure 1 - Compliance (Summary only)
-17. Annexure 2 - Technical Architecture (Detailed)
-18. Annexure 3 - Methodology & Team
-19. Annexure 4 - Evidence Matrix
-
-Return the entire response as a single Markdown string in a JSON object with the key "draft_markdown".
-    """
+    if not rfp:
+        return {"error": "RFP not found"}
 
     try:
-        file = client.files.get(name=rfp.gemini_file_uri)
-        response = call_gemini_with_retry([file, prompt])
-        raw_text = response.text.strip()
+        # Define the 21 Sections from the user's updated structure (from resume_rfp_17.py)
+        sections = [
+            "Executive Summary",
+            "Understanding of RFP Requirements (Functional & Non-Functional)",
+            "Proposed Solution Overview (Architecture, Modules, Technology)",
+            "Detailed Functional Solution Architecture: Budget & Commitment Management",
+            "Detailed Functional Solution Architecture: Contract & Sanction Management",
+            "Detailed Functional Solution Architecture: Human Resource Management",
+            "Detailed Functional Solution Architecture: Receipt & Payment Management",
+            "Detailed Functional Solution Architecture: Grant & Project Management",
+            "Detailed Functional Solution Architecture: Asset & General Ledger Accounting",
+            "Detailed Functional Solution Architecture: Data Analytics & Master Data",
+            "Detailed Functional Requirement Specification (FRS) Coverage",
+            "Integration Architecture (Gateways, Banking, Governance)",
+            "Data Migration Strategy (ETL, Validation, Governance)",
+            "Implementation Strategy (Phases, Timeline, Training)",
+            "Project Governance and Resource Deployment",
+            "Testing and Quality Assurance Strategy",
+            "Training and Change Management",
+            "Operations and Maintenance Strategy",
+            "Security and Compliance Framework",
+            "Service Level Agreements (SLA) and Risks",
+            "Conclusion and Annexures (Compliance Matrix, Evidence)"
+        ]
 
-        # Clean JSON
-        if raw_text.startswith("```"):
-            raw_text = raw_text.split("```")[1]
-            if raw_text.startswith("json"):
-                raw_text = raw_text[4:]
-        raw_text = raw_text.strip()
+        # Determine the version. If we are 'in_drafting' and already have some sections, we resume the latest version.
+        # Otherwise, we start a new version.
+        from sqlalchemy import desc
+        latest_v_record = db.query(RFPDraft).filter(RFPDraft.rfp_id == rfp_id).order_by(desc(RFPDraft.version)).first()
+        
+        # We start a new version ONLY if the latest one is already 'completed' (has 21 sections) 
+        # or if there is no record yet.
+        if latest_v_record:
+            completed_count = db.query(RFPDraft).filter(
+                RFPDraft.rfp_id == rfp_id, 
+                RFPDraft.version == latest_v_record.version,
+                RFPDraft.section_name != None
+            ).count()
+            if completed_count >= len(sections):
+                next_version = latest_v_record.version + 1
+            else:
+                next_version = latest_v_record.version
+        else:
+            next_version = 1
 
-        # Try to parse JSON, if it fails, maybe it returned raw markdown
-        try:
-            result = json.loads(raw_text)
-            markdown_content = result.get("draft_markdown", raw_text)
-        except:
-            markdown_content = raw_text
-
-        # Create notification for the assigned architect
-        from app.models.rfp import RFPAssignment
-        assignment = db.query(RFPAssignment).filter(RFPAssignment.rfp_id == rfp_id).order_by(RFPAssignment.assigned_at.desc()).first()
-        if assignment:
-            create_notification(
-                db,
-                user_id=assignment.assigned_to,
-                message=f"AI Draft generated for RFP: {rfp.title}. You can now start refining it in your workspace.",
+        # Create a placeholder record for this version to signal progress tracking (if not already there)
+        existing_placeholder = db.query(RFPDraft).filter(
+            RFPDraft.rfp_id == rfp_id, 
+            RFPDraft.version == next_version,
+            RFPDraft.section_order == 0
+        ).first()
+        
+        if not existing_placeholder:
+            placeholder = RFPDraft(
                 rfp_id=rfp_id,
-                type="success"
+                version=next_version,
+                section_name=None, # Marker for "starting"
+                section_order=0,
+                draft_content="Proposal generation initiated...",
+                created_by=rfp.uploaded_by
             )
+            db.add(placeholder)
+            db.commit()
 
-        return {"rfp_id": rfp_id, "status": "draft_generated", "draft_markdown": markdown_content}
+        # Generate all sections iteratively
+        for i, section_title in enumerate(sections):
+            # Check for cancellation
+            db.refresh(rfp)
+            if rfp.current_status != "in_drafting":
+                print(f"[{rfp_id}] Generation cancelled or stopped (Status: {rfp.current_status}).")
+                return {"rfp_id": rfp_id, "status": "stopped"}
+
+            # Check if this section already exists for this version (Resume capability)
+            existing = db.query(RFPDraft).filter(
+                RFPDraft.rfp_id == rfp_id,
+                RFPDraft.version == next_version,
+                RFPDraft.section_name == section_title
+            ).first()
+            if existing:
+                print(f"[{rfp_id}] Section {section_title} already exists. Skipping.")
+                continue
+
+            result = generate_proposal_section(db, rfp_id, section_title, i+1, rfp.uploaded_by, version=next_version)
+            
+            if result is None:
+                # If generation failed, check if it was a rate limit
+                # Note: call_gemini_with_retry will raise an exception if retries fail.
+                # If we get here, it means generate_proposal_section caught it and returned None.
+                # We stop the loop to avoid burning more retries on other sections.
+                print(f"[{rfp_id}] Failed to generate {section_title}. Stopping loop to preserve quota.")
+                rfp.current_status = "rate_limit_error"
+                db.commit()
+                return {"rfp_id": rfp_id, "status": "rate_limit_error", "error": f"Failed at section {section_title}"}
+
+            time.sleep(5) # Delay to stay under 15 RPM Free Tier limit
+
+        # Notify user that process has completed
+        create_notification(
+            db,
+            user_id=rfp.uploaded_by,
+            message=f"Success! The High-Density Proposal for {rfp.title} is now complete with {len(sections)} sections.",
+            rfp_id=rfp_id,
+            type="success"
+        )
+
+        return {
+            "rfp_id": rfp_id, 
+            "status": "success", 
+            "message": f"All {len(sections)} sections generated successfully.",
+            "sections_count": len(sections)
+        }
 
     except Exception as e:
         return {"rfp_id": rfp_id, "status": "error", "error": str(e)}
 
-def chat_with_document(db: Session, rfp_id: int, message: str, knowledge_mode: str = "hybrid") -> str:
+def chat_with_document(db: Session, rfp_id: int, message: str, knowledge_mode: str = "hybrid", history: list = None) -> str:
+    # 1. Greeting Bypass (Save AI credits/quota for simple greetings)
+    greetings = ["hi", "hello", "hii", "hii", "helli", "hey", "good morning", "good evening"]
+    thanks = ["thanks", "thank you", "thx", "appreciate it", "nice", "cool"]
+    
+    clean_msg = message.lower().strip().strip("?!.")
+    if clean_msg in greetings:
+        return "Hello! I am your AI Advisor. I've analyzed this RFP and I'm ready to help. What would you like to know?"
+    if clean_msg in thanks:
+        return "You're welcome! I'm here if you have any more questions about the RFP."
+
     rfp = db.query(RFPDocument).filter(RFPDocument.id == rfp_id).first()
     if not rfp or not rfp.gemini_file_uri:
         return "Error: Document context not found. Please ensure the RFP is ingested."
@@ -300,11 +505,28 @@ def chat_with_document(db: Session, rfp_id: int, message: str, knowledge_mode: s
         system_prompt = "You are an AI Solution Architect. Use both the RFP document and expertise. Answer with clear structure: use bullets, bold headers, and numbered steps. Prioritize the RFP text."
 
     try:
-        file = client.files.get(name=rfp.gemini_file_uri)
+        # Context caching disabled for free tier stability
+        # cache = get_or_create_cache(db, rfp_id)
         
-        # Combine system prompt with user message
-        full_content = f"Instruction: {system_prompt}\n\nUser Question: {message}"
-        response = call_gemini_with_retry([file, full_content])
+        # Build prompt parts
+        prompt_parts = []
+        
+        # Add system instruction
+        prompt_parts.append(f"Instruction: {system_prompt}")
+        
+        # Add history if present
+        if history:
+            history_text = "\n".join([f"{m['role'].upper()}: {m['text']}" for m in history if m.get('text')])
+            prompt_parts.append(f"Previous Conversation History:\n{history_text}")
+            
+        # Add current question
+        prompt_parts.append(f"Current User Question: {message}")
+        
+        # Standard file upload (caching disabled for stability)
+        file = ensure_gemini_file(db, rfp)
+        if not file:
+            return "Error: Document context could not be loaded."
+        response = call_gemini_with_retry([file] + prompt_parts)
         
         return response.text
     except Exception as e:
@@ -313,11 +535,84 @@ def chat_with_document(db: Session, rfp_id: int, message: str, knowledge_mode: s
             return "**AI Advisor Fallback Mode Active (Rate Limit Reached):**\n\nThe CBSE IFHRMS RFP focuses on integrating modules for Payroll, Pension, GPF, and centralized HR management. Based on industry standards, the best approach is a multi-tier cloud architecture with strong encryption (AES-256 for data at rest) to ensure compliance. \n\n*Please upgrade your Gemini plan or wait for the quota to reset for real-time document extraction.*"
         return f"Error connecting to Gemini API: {str(e)}"
 
+def stream_chat_with_document(db: Session, rfp_id: int, message: str, knowledge_mode: str = "hybrid", history: list = None):
+    # 1. Greeting Bypass (Same as non-streaming for consistency)
+    greetings = ["hi", "hello", "hii", "hii", "helli", "hey", "good morning", "good evening"]
+    thanks = ["thanks", "thank you", "thx", "appreciate it", "nice", "cool"]
+    
+    clean_msg = message.lower().strip().strip("?!.")
+    if clean_msg in greetings:
+        yield "Hello! I am your AI Advisor. I've analyzed this RFP and I'm ready to help. What would you like to know?"
+        return
+    if clean_msg in thanks:
+        yield "You're welcome! I'm here if you have any more questions about the RFP."
+        return
+
+    rfp = db.query(RFPDocument).filter(RFPDocument.id == rfp_id).first()
+    if not rfp or not rfp.gemini_file_uri:
+        yield "Error: Document context not found. Please ensure the RFP is ingested."
+        return
+
+    # Determine system prompt based on knowledge mode
+    base_instruction = (
+        "You are an AI Solution Architect specializing in enterprise RFP responses. "
+        "Your goal is to provide highly structured, professional, and actionable insights. "
+        "ALWAYS use Markdown formatting: \n"
+        "- Use ### for section headers.\n"
+        "- Use **bold** for emphasis on key terms and dates.\n"
+        "- Use bullet points and numbered lists for readability.\n"
+        "- Use tables if you need to compare complex data.\n"
+        "- Break your answer into clear logical sections (e.g., Overview, Technical Highlights, Risks, Next Steps).\n"
+    )
+
+    if knowledge_mode == "RFP-Only":
+        system_prompt = f"{base_instruction} Use ONLY the provided RFP document. If the answer isn't in the RFP, say so clearly. Do not hallucinate."
+    elif knowledge_mode == "Global":
+        system_prompt = f"{base_instruction} Use your general expertise AND the RFP document. Prioritize the RFP, but add value from industry standards and best practices."
+    else: # Hybrid
+        system_prompt = f"{base_instruction} Use both the RFP document and your professional expertise. Provide a comprehensive answer with clear sectioning."
+
+    try:
+        # Context caching disabled for free tier stability
+        # cache = get_or_create_cache(db, rfp_id)
+        
+        prompt_parts = [f"Instruction: {system_prompt}"]
+        
+        if history:
+            history_text = "\n".join([f"{m['role'].upper()}: {m['text']}" for m in history if m.get('text')])
+            prompt_parts.append(f"Previous Conversation History:\n{history_text}")
+            
+        prompt_parts.append(f"Current User Question: {message}")
+        
+        # Tracking: Every chat request counts
+        track_quota_usage(db)
+
+        # Standard file upload (caching disabled for stability)
+        file = ensure_gemini_file(db, rfp)
+        if not file:
+            yield "Error: Document context could not be loaded."
+            return
+        response = client.models.generate_content_stream(
+            model="gemini-2.5-flash",
+            contents=[file] + prompt_parts
+        )
+        
+        for chunk in response:
+            if chunk.text:
+                yield chunk.text
+                
+    except Exception as e:
+        track_quota_usage(db, is_error=True, error_msg=str(e))
+        yield f"Error connecting to Gemini API: {str(e)}"
+
 def extract_compliance_matrix(db: Session, rfp_id: int) -> dict:
     from app.models.rfp import RFPRequirement
     rfp = db.query(RFPDocument).filter(RFPDocument.id == rfp_id).first()
     if not rfp or not rfp.gemini_file_uri:
         return {"error": "RFP or Gemini Context File not found"}
+
+    if rfp.current_status != "in_drafting":
+        return {"status": "cancelled", "message": "Compliance extraction skipped due to status change."}
 
     prompt = """
 You are a procurement expert. Analyze this full RFP document and extract a compliance matrix.
@@ -334,12 +629,16 @@ Return ONLY a JSON list of objects with this structure:
   }
 ]
 
-Be thorough. Aim for 10-20 key requirements. Return ONLY JSON.
+Be extremely thorough. Aim for 40-50 key requirements across all technical and functional areas. Return ONLY JSON.
 """
 
     try:
-        file = client.files.get(name=rfp.gemini_file_uri)
+        # Standard file upload (caching disabled for stability)
+        file = ensure_gemini_file(db, rfp)
+        if not file:
+            return {"error": "Failed to load document for compliance extraction."}
         response = call_gemini_with_retry([file, prompt])
+            
         raw_text = response.text.strip()
 
         # Clean JSON

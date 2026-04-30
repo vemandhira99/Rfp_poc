@@ -76,7 +76,7 @@ def process_rfp_background(rfp_id: int, db_session_factory):
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
         
         # 1. Native Ingestion
-        uploaded_file = client.files.upload(path=rfp.file_path, config={'display_name': rfp.file_name})
+        uploaded_file = client.files.upload(file=rfp.file_path, config={'display_name': rfp.file_name})
         rfp.gemini_file_uri = uploaded_file.name
         rfp.current_status = "processing_summary"
         db.commit()

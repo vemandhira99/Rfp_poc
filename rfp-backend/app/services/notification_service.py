@@ -22,3 +22,8 @@ def mark_as_read(db: Session, notification_id: int):
         notification.is_read = True
         db.commit()
     return notification
+
+def clear_all(db: Session, user_id: int):
+    db.query(Notification).filter(Notification.user_id == user_id).update({"is_read": True})
+    db.commit()
+    return True

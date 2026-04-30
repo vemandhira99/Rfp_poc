@@ -36,7 +36,45 @@ def save_draft(db: Session, rfp_id: int, user_id: int, draft_content: str, is_fi
     return draft
 
 def get_latest_draft(db: Session, rfp_id: int):
-    return db.query(RFPDraft).filter(RFPDraft.rfp_id == rfp_id).order_by(desc(RFPDraft.version)).first()
+    # 1. Find the latest version number
+    latest_version_record = db.query(RFPDraft).filter(RFPDraft.rfp_id == rfp_id).order_by(desc(RFPDraft.version)).first()
+    if not latest_version_record:
+        return None
+    
+    latest_version = latest_version_record.version
+    
+    # 2. Get all records for this version
+    draft_records = db.query(RFPDraft).filter(
+        RFPDraft.rfp_id == rfp_id, 
+        RFPDraft.version == latest_version
+    ).order_by(RFPDraft.section_order).all()
+    
+    if not draft_records:
+        return None
+        
+    # 3. If only one record and no section name, it's a legacy/single draft
+    if len(draft_records) == 1 and not draft_records[0].section_name:
+        return draft_records[0]
+        
+    # 4. Otherwise, aggregate all sections
+    full_content = ""
+    for dr in draft_records:
+        if dr.section_name:
+            full_content += f"# {dr.section_name}\n\n"
+        full_content += dr.draft_content + "\n\n"
+    
+    # Return a synthetic object that mimics RFPDraft for compatibility
+    class SyntheticDraft:
+        def __init__(self, content, version, rfp_id, created_by):
+            self.draft_content = content
+            self.version = version
+            self.rfp_id = rfp_id
+            self.created_by = created_by
+            self.id = 0 # Dummy ID
+            self.is_final = False
+            self.created_at = draft_records[0].created_at
+            
+    return SyntheticDraft(full_content.strip(), latest_version, rfp_id, draft_records[0].created_by)
 
 def get_draft_history(db: Session, rfp_id: int):
     return db.query(RFPDraft).filter(RFPDraft.rfp_id == rfp_id).order_by(desc(RFPDraft.version)).all()

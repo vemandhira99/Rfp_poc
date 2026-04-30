@@ -10,7 +10,7 @@ security = HTTPBearer()
 
 # Database initialization
 from app.core.database import engine, Base
-from app.models import Notification # Ensure all models are imported
+from app.models import Notification, rfp, role, sections, user, quota
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -31,13 +31,13 @@ app.add_middleware(
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
 # Register routers
-from app.models import rfp, role, sections, user
+from app.models import rfp, role, sections, user, quota
 
 # trigger reload
 app.include_router(auth.router)
 app.include_router(rfps.router)
 app.include_router(uploads.router)
-# Trigger reload check 2
+# Trigger reload check 2 - picking up new API Key
 app.include_router(ai.router)   # ✅ NEW
 
 @app.get("/")
